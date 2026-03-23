@@ -140,3 +140,14 @@ fn new_round_can_start_after_timeout() {
     assert!(second_round.active);
     assert!(!second_round.timed_out);
 }
+
+#[test]
+fn data_model_doc_covers_required_sections() {
+    let doc = include_str!("../../DATA_MODEL.md");
+
+    assert!(doc.contains("## Storage Key Inventory"));
+    assert!(doc.contains("## TTL Policy Baseline"));
+    assert!(doc.contains("## Access Pattern Matrix"));
+    assert!(doc.contains("## ER-Style State Diagram"));
+    assert!(doc.contains("No custom Soroban storage keys are currently defined or used."));
+}
