@@ -1327,7 +1327,7 @@ fn test_paused_blocks_game_functions_not_governance() {
         "timeout_round must fail when paused"
     );
     assert_eq!(
-        client.try_submit_choice(&player, &Choice::Heads),
+        client.try_submit_choice(&player, &1u32, &Choice::Heads),
         Err(Ok(ArenaError::Paused)),
         "submit_choice must fail when paused"
     );
@@ -1412,4 +1412,82 @@ fn test_is_paused_reflects_state_transitions() {
 
     client.unpause();
     assert!(!client.is_paused());
+}
+
+// ── Issue #214: get_arena_state() ─────────────────────────────────────────────
+
+/// All fields default to zero / false on a fresh contract with no players.
+#[test]
+fn get_arena_state_defaults_before_any_action() {
+    let env = Env::default();
+    let client = create_client(&env);
+
+    let state = client.get_arena_state();
+    assert_eq!(state.survivors_count, 0);
+    assert_eq!(state.max_capacity, 0);
+    assert_eq!(state.round_number, 0);
+    assert_eq!(state.current_stake, 0);
+    assert_eq!(state.potential_payout, 0);
+}
+
+/// `round_number` in the returned state matches the value returned by `start_round`.
+#[test]
+fn get_arena_state_reflects_round_number() {
+    let env = Env::default();
+    let client = create_client(&env);
+
+    set_ledger_sequence(&env, 100);
+    client.init(&5);
+    let round = client.start_round();
+
+    let state = client.get_arena_state();
+    assert_eq!(state.round_number, round.round_number);
+    assert_eq!(state.round_number, 1);
+}
+
+/// After `join()`, `survivors_count` increases and subsequent reads are consistent.
+#[test]
+fn get_arena_state_reflects_survivor_count() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = create_client(&env);
+
+    let player_a = Address::generate(&env);
+    let player_b = Address::generate(&env);
+
+    // Before any joins.
+    assert_eq!(client.get_arena_state().survivors_count, 0);
+
+    client.join(&player_a, &100i128);
+    assert_eq!(client.get_arena_state().survivors_count, 1);
+
+    client.join(&player_b, &200i128);
+    assert_eq!(client.get_arena_state().survivors_count, 2);
+}
+
+/// After `set_capacity(n)`, `max_capacity` reflects that value.
+#[test]
+fn get_arena_state_reflects_capacity() {
+    let (env, _admin, client) = setup_with_admin();
+
+    assert_eq!(client.get_arena_state().max_capacity, 0, "default is 0");
+
+    client.set_capacity(&8u32);
+    assert_eq!(client.get_arena_state().max_capacity, 8);
+}
+
+/// Calling `get_arena_state` twice returns identical results with no side effects.
+#[test]
+fn get_arena_state_is_pure_read() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = create_client(&env);
+
+    set_ledger_sequence(&env, 50);
+    client.init(&10);
+    client.start_round();
+
+    let state_a = client.get_arena_state();
+    let state_b = client.get_arena_state();
+    assert_eq!(state_a, state_b, "repeated calls must return identical state");
 }

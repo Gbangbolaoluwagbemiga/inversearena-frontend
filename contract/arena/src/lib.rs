@@ -11,6 +11,8 @@ const ADMIN_KEY: Symbol = symbol_short!("ADMIN");
 const PAUSED_KEY: Symbol = symbol_short!("PAUSED");
 const PENDING_HASH_KEY: Symbol = symbol_short!("P_HASH");
 const EXECUTE_AFTER_KEY: Symbol = symbol_short!("P_AFTER");
+const SURVIVOR_COUNT_KEY: Symbol = symbol_short!("S_COUNT");
+const CAPACITY_KEY: Symbol = symbol_short!("CAPACITY");
 // ── Timelock constant: 48 hours in seconds ────────────────────────────────────
 
 const TIMELOCK_PERIOD: u64 = 48 * 60 * 60;
@@ -64,6 +66,20 @@ pub enum Choice {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArenaConfig {
     pub round_speed_in_ledgers: u32,
+}
+
+/// Aggregate view of arena state returned by `get_arena_state`.
+///
+/// Serialised by Soroban as `ScvMap { ScvSymbol(field) → value }`, which
+/// matches the symbol-keyed parsing in the frontend's `stellar-scval-extract.ts`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArenaState {
+    pub survivors_count: u32,
+    pub max_capacity: u32,
+    pub round_number: u32,
+    pub current_stake: i128,
+    pub potential_payout: i128,
 }
 
 #[contracttype]
@@ -285,6 +301,52 @@ impl ArenaContract {
         env.storage().instance().get(&PAUSED_KEY).unwrap_or(false)
     }
 
+    /// Set the maximum player capacity for this arena. Admin-only.
+    ///
+    /// # Authorization
+    /// Requires admin signature.
+    pub fn set_capacity(env: Env, capacity: u32) {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&ADMIN_KEY)
+            .expect("not initialized");
+        admin.require_auth();
+        env.storage().instance().set(&CAPACITY_KEY, &capacity);
+    }
+
+    /// Return a snapshot of the arena's live state.
+    ///
+    /// Pure read — no storage writes, safe to call via simulation.
+    /// Serialises as `ScvMap { Symbol → Val }` matching the frontend parser in
+    /// `stellar-scval-extract.ts`.
+    pub fn get_arena_state(env: Env) -> ArenaState {
+        let survivors_count: u32 = env
+            .storage()
+            .instance()
+            .get(&SURVIVOR_COUNT_KEY)
+            .unwrap_or(0u32);
+        let max_capacity: u32 = env
+            .storage()
+            .instance()
+            .get(&CAPACITY_KEY)
+            .unwrap_or(0u32);
+        let round_number: u32 = storage(&env)
+            .get::<_, RoundState>(&DataKey::Round)
+            .map(|r| r.round_number)
+            .unwrap_or(0u32);
+
+        ArenaState {
+            survivors_count,
+            max_capacity,
+            round_number,
+            // The contract uses per-player Winner records rather than a global
+            // prize pool, so these aggregate financials are not tracked on-chain.
+            current_stake: 0,
+            potential_payout: 0,
+        }
+    }
+
     pub fn join(env: Env, player: Address, amount: i128) -> Result<(), ArenaError> {
         player.require_auth();
 
@@ -299,6 +361,16 @@ impl ArenaContract {
 
         storage(&env).set(&survivor_key, &());
         bump(&env, &survivor_key);
+
+        // Track total survivor count for get_arena_state().
+        let count: u32 = env
+            .storage()
+            .instance()
+            .get(&SURVIVOR_COUNT_KEY)
+            .unwrap_or(0u32);
+        env.storage()
+            .instance()
+            .set(&SURVIVOR_COUNT_KEY, &(count + 1));
 
         Ok(())
     }

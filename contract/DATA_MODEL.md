@@ -46,6 +46,8 @@ File: `contract/arena/src/lib.rs`
 | `ADMIN` | `Address` | Contract admin; set once via `initialize` |
 | `P_HASH` | `BytesN<32>` | WASM hash pending upgrade via 48-hour timelock |
 | `P_AFTER` | `u64` | Earliest timestamp at which `execute_upgrade` may be called |
+| `S_COUNT` | `u32` | Running total of players registered via `join`; read by `get_arena_state` |
+| `CAPACITY` | `u32` | Maximum player capacity set by admin via `set_capacity`; read by `get_arena_state` |
 
 ### Factory Contract
 
@@ -80,6 +82,9 @@ No custom Soroban storage keys are currently defined or used.
 | `propose_upgrade` ¹ | `ADMIN` (instance) | `P_HASH`, `P_AFTER` (instance) | — |
 | `execute_upgrade` ¹ | `ADMIN`, `P_AFTER`, `P_HASH` (instance) | removes `P_HASH`, `P_AFTER` (instance) | — |
 | `cancel_upgrade` ¹ | `ADMIN`, `P_HASH` (instance) | removes `P_HASH`, `P_AFTER` (instance) | — |
+| `join` | `Survivor(player)`, `S_COUNT` (instance) | `Survivor(player)`, `S_COUNT` (instance) | `Survivor(player)` |
+| `set_capacity` | `ADMIN` (instance) | `CAPACITY` (instance) | — |
+| `get_arena_state` | `S_COUNT`, `CAPACITY` (instance), `Round` | — | — |
 
 ¹ Exempt from the global pause check — see [Emergency Pause Policy](#emergency-pause-policy) below.
 
