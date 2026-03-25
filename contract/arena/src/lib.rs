@@ -487,6 +487,24 @@ impl ArenaContract {
         })
     }
 
+    pub fn set_winner(env: Env, player: Address, stake: i128, yield_comp: i128) -> Result<(), ArenaError> {
+        require_not_paused(&env)?;
+        let admin = Self::admin(env.clone());
+        admin.require_auth();
+
+        if stake < 0 || yield_comp < 0 {
+            return Err(ArenaError::InvalidAmount);
+        }
+
+        let prize = stake
+            .checked_add(yield_comp)
+            .ok_or(ArenaError::InvalidAmount)?;
+
+        storage(&env).set(&DataKey::Survivor(player), &());
+        env.storage().instance().set(&PRIZE_POOL_KEY, &prize);
+        Ok(())
+    }
+
     pub fn claim(env: Env, winner: Address) -> Result<i128, ArenaError> {
         winner.require_auth();
 

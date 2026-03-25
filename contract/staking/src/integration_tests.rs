@@ -50,8 +50,8 @@ fn integration_deploys_and_initializes() {
     let (_env, admin, _staker1, _staker2, client, token_client) = setup();
 
     assert_eq!(client.token(), token_client.address.clone());
-    assert_eq!(client.total_staked().unwrap(), 0);
-    assert_eq!(client.total_shares().unwrap(), 0);
+    assert_eq!(client.total_staked(), 0);
+    assert_eq!(client.total_shares(), 0);
 
     // Sanity: admin address was persisted.
     // (We don't have a getter in the contract, but initialization must have succeeded.)
@@ -65,11 +65,11 @@ fn integration_stake_flow_and_yield_mimic() {
 
     // First staker: when totals are empty, minted shares = amount.
     let amount1 = 250_000_000i128;
-    let minted1 = client.stake(&staker1, &amount1).unwrap();
+    let minted1 = client.stake(&staker1, &amount1);
     assert_eq!(minted1, amount1);
 
-    assert_eq!(client.total_staked().unwrap(), amount1);
-    assert_eq!(client.total_shares().unwrap(), amount1);
+    assert_eq!(client.total_staked(), amount1);
+    assert_eq!(client.total_shares(), amount1);
     assert_eq!(client.get_position(&staker1), StakePosition { amount: amount1, shares: amount1 });
 
     // "Mimic yield" by increasing total_staked without increasing total_shares,
@@ -83,7 +83,7 @@ fn integration_stake_flow_and_yield_mimic() {
 
     // Second staker: minted shares should reflect the higher total_staked.
     let amount2 = 100_000_000i128;
-    let minted2 = client.stake(&staker2, &amount2).unwrap();
+    let minted2 = client.stake(&staker2, &amount2);
 
     // Contract uses: amount * total_shares / total_staked (integer division).
     let expected_minted2 = amount2

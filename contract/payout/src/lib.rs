@@ -2,11 +2,13 @@
 
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, Address,
-    Env, Symbol,
+    Env, Symbol, Vec,
 };
 
 const ADMIN_KEY: Symbol = symbol_short!("ADMIN");
+const TREASURY_KEY: Symbol = symbol_short!("TREAS");
 const TOPIC_PAYOUT_EXECUTED: Symbol = symbol_short!("PAYOUT");
+const TOPIC_DUST_COLLECTED: Symbol = symbol_short!("DUST");
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -30,6 +32,8 @@ pub enum PayoutError {
     UnauthorizedCaller = 1,
     InvalidAmount = 2,
     AlreadyPaid = 3,
+    NoWinners = 4,
+    TreasuryNotSet = 5,
 }
 
 #[contract]
@@ -60,6 +64,19 @@ impl PayoutContract {
             .instance()
             .get(&ADMIN_KEY)
             .expect("not initialized")
+    }
+
+    pub fn set_treasury(env: Env, treasury: Address) {
+        let admin = Self::admin(env.clone());
+        admin.require_auth();
+        env.storage().instance().set(&TREASURY_KEY, &treasury);
+    }
+
+    pub fn treasury(env: Env) -> Result<Address, PayoutError> {
+        env.storage()
+            .instance()
+            .get(&TREASURY_KEY)
+            .ok_or(PayoutError::TreasuryNotSet)
     }
 
     pub fn distribute_winnings(
@@ -120,6 +137,40 @@ impl PayoutContract {
     pub fn get_payout(env: Env, idempotency_key: u32, winner: Address) -> Option<PayoutData> {
         let payout_key = DataKey::Payout(idempotency_key, winner);
         env.storage().instance().get(&payout_key)
+    }
+
+    pub fn distribute_prize(
+        env: Env,
+        total_prize: i128,
+        winners: Vec<Address>,
+        currency: Address,
+    ) -> Result<(), PayoutError> {
+        let admin = Self::admin(env.clone());
+        admin.require_auth();
+
+        if total_prize <= 0 {
+            return Err(PayoutError::InvalidAmount);
+        }
+        if winners.is_empty() {
+            return Err(PayoutError::NoWinners);
+        }
+
+        let treasury = Self::treasury(env.clone())?;
+        let count = winners.len() as i128;
+        let share = total_prize / count;
+        let dust = total_prize % count;
+
+        for winner in winners.iter() {
+            env.events()
+                .publish((TOPIC_PAYOUT_EXECUTED,), (winner, share, currency.clone()));
+        }
+
+        if dust > 0 {
+            env.events()
+                .publish((TOPIC_DUST_COLLECTED,), (treasury, dust, currency));
+        }
+
+        Ok(())
     }
 }
 
