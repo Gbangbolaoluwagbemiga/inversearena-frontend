@@ -412,32 +412,6 @@ impl FactoryContract {
             .set(&DataKey::SupportedToken(token), &true);
     }
 
-    pub fn create_pool(
-        env: Env,
-        amount: i128,
-        currency: Address,
-        _round_speed: u32,
-        capacity: u32,
-    ) -> Result<Address, Error> {
-        if amount <= 0 {
-            return Err(Error::InvalidStakeForPool);
-        }
-        if capacity < 2 || capacity > 1000 {
-            return Err(Error::InvalidInput);
-        }
-        let supported: bool = env
-            .storage()
-            .persistent()
-            .get(&DataKey::SupportedToken(currency))
-            .unwrap_or(false);
-        if !supported {
-            return Err(Error::UnsupportedToken);
-        }
-
-        // Dummy logic to return the factory address as the "pool" address since actual pool deployment isn't defined here.
-        Ok(env.current_contract_address())
-    }
-
     // ── Upgrade mechanism ────────────────────────────────────────────────────
 
     /// Propose a WASM upgrade. The new hash is stored together with the
