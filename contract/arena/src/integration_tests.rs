@@ -128,6 +128,7 @@ fn lifecycle_full_game_three_rounds_eight_players() {
 
     payout.set_treasury(&admin); // Dust goes to admin for this test
     payout.distribute_prize(
+        &1u32,
         &prize_amount,
         &soroban_sdk::vec![&env, winner.clone()],
         &xlm_address,
@@ -185,7 +186,7 @@ fn test_payout_rounding_and_dust() {
     ]; // 3 winners
 
     // 100 / 3 = 33 share, 1 dust
-    payout.distribute_prize(&total_prize, &winners, &currency);
+    payout.distribute_prize(&1u32, &total_prize, &winners, &currency);
 
     // Verification of events (dust emitted) or state if tracked.
     // For this test, we just ensure it doesn't panic and logic is exercised.

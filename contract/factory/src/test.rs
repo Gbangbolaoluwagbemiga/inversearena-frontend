@@ -386,9 +386,10 @@ fn test_execute_with_only_execute_after_returns_malformed_upgrade_state() {
     let (env, _admin, client) = setup();
     let contract_id = client.address.clone();
     env.as_contract(&contract_id, || {
-        env.storage()
-            .instance()
-            .set(&EXECUTE_AFTER_KEY, &(env.ledger().timestamp() + TIMELOCK + 1));
+        env.storage().instance().set(
+            &EXECUTE_AFTER_KEY,
+            &(env.ledger().timestamp() + TIMELOCK + 1),
+        );
     });
 
     let result = client.try_execute_upgrade();
@@ -601,7 +602,7 @@ fn test_get_arenas_pagination() {
 
     let all = client.get_arenas(&0u32, &10u32);
     assert_eq!(all.len(), 5);
-    
+
     let page1 = client.get_arenas(&0u32, &2u32);
     assert_eq!(page1.len(), 2);
     assert_eq!(page1.get(0).unwrap().pool_id, 0);
