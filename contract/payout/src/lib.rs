@@ -1,8 +1,8 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, Address,
-    Env, Symbol, Vec,
+    Address, Env, Symbol, Vec, contract, contracterror, contractimpl, contracttype,
+    panic_with_error, symbol_short, token,
 };
 
 const ADMIN_KEY: Symbol = symbol_short!("ADMIN");
@@ -14,6 +14,7 @@ const TOPIC_DUST_COLLECTED: Symbol = symbol_short!("DUST");
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     Payout(u32, Address),
+    PrizePayout(u32), // idempotency key for distribute_prize game rounds
 }
 
 #[contracttype]
@@ -48,7 +49,7 @@ impl PayoutContract {
     ///
     /// # Authorization
     /// None — open to any caller.
-        pub fn hello(_env: Env) -> u32 {
+    pub fn hello(_env: Env) -> u32 {
         789
     }
 
@@ -143,12 +144,19 @@ impl PayoutContract {
 
     pub fn distribute_prize(
         env: Env,
+        game_id: u32,
         total_prize: i128,
         winners: Vec<Address>,
         currency: Address,
     ) -> Result<(), PayoutError> {
         let admin = Self::admin(env.clone());
         admin.require_auth();
+
+        // Idempotency guard — prevent double-payment on retry
+        let prize_key = DataKey::PrizePayout(game_id);
+        if env.storage().instance().has(&prize_key) {
+            return Err(PayoutError::AlreadyPaid);
+        }
 
         if total_prize <= 0 {
             return Err(PayoutError::InvalidAmount);
@@ -162,17 +170,29 @@ impl PayoutContract {
         let share = total_prize / count;
         let dust = total_prize % count;
 
+        let token_client = token::Client::new(&env, &currency);
+        let contract_address = env.current_contract_address();
+
         for winner in winners.iter() {
+            token_client.transfer(&contract_address, &winner, &share);
             env.events()
                 .publish((TOPIC_PAYOUT_EXECUTED,), (winner, share, currency.clone()));
         }
 
         if dust > 0 {
+            token_client.transfer(&contract_address, &treasury, &dust);
             env.events()
                 .publish((TOPIC_DUST_COLLECTED,), (treasury, dust, currency));
         }
 
+        // Mark this game's prize as paid out
+        env.storage().instance().set(&prize_key, &true);
+
         Ok(())
+    }
+
+    pub fn is_prize_distributed(env: Env, game_id: u32) -> bool {
+        env.storage().instance().has(&DataKey::PrizePayout(game_id))
     }
 }
 

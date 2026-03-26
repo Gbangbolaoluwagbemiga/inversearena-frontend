@@ -11,8 +11,8 @@ extern crate std;
 use factory::{FactoryContract, FactoryContractClient};
 use payout::{PayoutContract, PayoutContractClient};
 use soroban_sdk::{
-    testutils::{Address as _, Ledger, LedgerInfo},
     Address, BytesN, Env,
+    testutils::{Address as _, Ledger, LedgerInfo},
 };
 
 use super::*;
@@ -60,7 +60,12 @@ fn deploy_all(
     (factory, payout)
 }
 
-fn deploy_arena(env: &Env, admin: &Address, round_speed: u32, token: &Address) -> ArenaContractClient<'static> {
+fn deploy_arena(
+    env: &Env,
+    admin: &Address,
+    round_speed: u32,
+    token: &Address,
+) -> ArenaContractClient<'static> {
     let env_s: &'static Env = unsafe { &*(env as *const Env) };
     let arena_id = env.register(ArenaContract, ());
     let arena = ArenaContractClient::new(env_s, &arena_id);
@@ -103,7 +108,11 @@ fn lifecycle_full_game_three_rounds_eight_players() {
 
     set_seq(&env, 1_015);
     for (i, p) in players.iter().enumerate() {
-        let choice = if i % 2 == 0 { Choice::Heads } else { Choice::Tails };
+        let choice = if i % 2 == 0 {
+            Choice::Heads
+        } else {
+            Choice::Tails
+        };
         arena.submit_choice(p, &r1.round_number, &choice);
     }
 
@@ -117,7 +126,12 @@ fn lifecycle_full_game_three_rounds_eight_players() {
     let prize_amount = 80_000_000i128;
 
     payout.set_treasury(&admin); // Dust goes to admin for this test
-    payout.distribute_prize(&prize_amount, &soroban_sdk::vec![&env, winner.clone()], &xlm_address);
+    payout.distribute_prize(
+        &1u32,
+        &prize_amount,
+        &soroban_sdk::vec![&env, winner.clone()],
+        &xlm_address,
+    );
 }
 
 #[test]
@@ -126,7 +140,7 @@ fn test_double_claim_prevention() {
     env.mock_all_auths();
     let admin = Address::generate(&env);
     let (_factory, _) = deploy_all(&env, &admin);
-    
+
     let xlm_address = Address::generate(&env);
     let arena = deploy_arena(&env, &admin, 10u32, &xlm_address);
 
@@ -159,10 +173,15 @@ fn test_payout_rounding_and_dust() {
 
     let total_prize = 100i128;
     let currency = Address::generate(&env);
-    let winners = soroban_sdk::vec![&env, Address::generate(&env), Address::generate(&env), Address::generate(&env)]; // 3 winners
+    let winners = soroban_sdk::vec![
+        &env,
+        Address::generate(&env),
+        Address::generate(&env),
+        Address::generate(&env)
+    ]; // 3 winners
 
     // 100 / 3 = 33 share, 1 dust
-    payout.distribute_prize(&total_prize, &winners, &currency);
+    payout.distribute_prize(&1u32, &total_prize, &winners, &currency);
 
     // Verification of events (dust emitted) or state if tracked.
     // For this test, we just ensure it doesn't panic and logic is exercised.
@@ -199,12 +218,12 @@ fn test_upgrade_cancellation() {
     env.mock_all_auths();
     let admin = Address::generate(&env);
     let (_factory, _) = deploy_all(&env, &admin);
-    
+
     let xlm_address = Address::generate(&env);
     let arena = deploy_arena(&env, &admin, 10u32, &xlm_address);
 
     let new_wasm = dummy_wasm_hash(&env);
-    
+
     // Propose
     arena.propose_upgrade(&new_wasm);
     assert!(arena.pending_upgrade().is_some());
