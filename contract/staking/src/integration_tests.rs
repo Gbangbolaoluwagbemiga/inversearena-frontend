@@ -4,8 +4,11 @@ extern crate std;
 
 use super::*;
 use soroban_sdk::{
-    token, Address, Env, testutils::Address as _,
+    Address,
+    Env,
+    testutils::Address as _,
     // Needed so we can directly tweak instance storage within `as_contract`.
+    token,
 };
 
 fn setup() -> (
@@ -70,7 +73,13 @@ fn integration_stake_flow_and_yield_mimic() {
 
     assert_eq!(client.total_staked(), amount1);
     assert_eq!(client.total_shares(), amount1);
-    assert_eq!(client.get_position(&staker1), StakePosition { amount: amount1, shares: amount1 });
+    assert_eq!(
+        client.get_position(&staker1),
+        StakePosition {
+            amount: amount1,
+            shares: amount1
+        }
+    );
 
     // "Mimic yield" by increasing total_staked without increasing total_shares,
     // simulating accrual to existing principals.
@@ -78,7 +87,9 @@ fn integration_stake_flow_and_yield_mimic() {
     let adjusted_total_staked = amount1 + yield_amount;
 
     env.as_contract(&contract_address, || {
-        env.storage().instance().set(&TOTAL_STAKED_KEY, &adjusted_total_staked);
+        env.storage()
+            .instance()
+            .set(&TOTAL_STAKED_KEY, &adjusted_total_staked);
     });
 
     // Second staker: minted shares should reflect the higher total_staked.
@@ -98,9 +109,5 @@ fn integration_stake_flow_and_yield_mimic() {
     assert_eq!(position2.shares, expected_minted2);
 
     // Token balances moved into the staking contract.
-    assert_eq!(
-        token_client.balance(&contract_address),
-        amount1 + amount2
-    );
+    assert_eq!(token_client.balance(&contract_address), amount1 + amount2);
 }
-

@@ -1,8 +1,8 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env, Symbol,
-    IntoVal, xdr::ToXdr,
+    Address, BytesN, Env, IntoVal, Symbol, contract, contracterror, contractimpl, contracttype,
+    symbol_short, xdr::ToXdr,
 };
 
 // ── Storage keys ─────────────────────────────────────────────────────────────
@@ -29,7 +29,6 @@ pub struct ArenaMetadata {
     pub capacity: u32,
     pub stake_amount: i128,
 }
-
 
 // ── Capacity limits ───────────────────────────────────────────────────────────
 
@@ -221,7 +220,8 @@ impl FactoryContract {
         admin.require_auth();
         let key = (WHITELIST_PREFIX, host.clone());
         env.storage().instance().set(&key, &true);
-        env.events().publish((TOPIC_HOST_WHITELISTED,), (EVENT_VERSION, host));
+        env.events()
+            .publish((TOPIC_HOST_WHITELISTED,), (EVENT_VERSION, host));
         Ok(())
     }
 
@@ -235,7 +235,8 @@ impl FactoryContract {
         admin.require_auth();
         let key = (WHITELIST_PREFIX, host.clone());
         env.storage().instance().remove(&key);
-        env.events().publish((TOPIC_HOST_REMOVED,), (EVENT_VERSION, host));
+        env.events()
+            .publish((TOPIC_HOST_REMOVED,), (EVENT_VERSION, host));
         Ok(())
     }
 
@@ -344,7 +345,6 @@ impl FactoryContract {
 
         // ── Deployment ──────────────────────────────────────────────────────────
 
-
         // Create a unique salt for this deployment.
         let mut salt_bin = soroban_sdk::Bytes::new(&env);
         salt_bin.append(&caller.clone().to_xdr(&env));
@@ -363,10 +363,7 @@ impl FactoryContract {
         };
 
         #[cfg(not(test))]
-        let arena_address = env
-            .deployer()
-            .with_current_contract(salt)
-            .deploy(wasm_hash);
+        let arena_address = env.deployer().with_current_contract(salt).deploy(wasm_hash);
 
         // ── Initialisation ──────────────────────────────────────────────────────
 
@@ -374,7 +371,7 @@ impl FactoryContract {
         // Note: In a real implementation, you'd use the generated client from the arena contract.
         // For simplicity here, we use invoke_contract if we don't have the client imported.
         // However, better to assume the workspace allows cross-contract calls.
-        
+
         env.invoke_contract::<()>(
             &arena_address,
             &soroban_sdk::symbol_short!("init"),
@@ -398,8 +395,17 @@ impl FactoryContract {
         all_pools.push_back(pool_id);
         env.storage().instance().set(&ALL_POOLS_KEY, &all_pools);
 
-        env.events()
-            .publish((TOPIC_POOL_CREATED,), (EVENT_VERSION, pool_id, caller, capacity, stake, arena_address.clone()));
+        env.events().publish(
+            (TOPIC_POOL_CREATED,),
+            (
+                EVENT_VERSION,
+                pool_id,
+                caller,
+                capacity,
+                stake,
+                arena_address.clone(),
+            ),
+        );
 
         Ok(arena_address)
     }
@@ -444,8 +450,10 @@ impl FactoryContract {
             .instance()
             .set(&EXECUTE_AFTER_KEY, &execute_after);
 
-        env.events()
-            .publish((TOPIC_UPGRADE_PROPOSED,), (EVENT_VERSION, new_wasm_hash, execute_after));
+        env.events().publish(
+            (TOPIC_UPGRADE_PROPOSED,),
+            (EVENT_VERSION, new_wasm_hash, execute_after),
+        );
         Ok(())
     }
 
@@ -496,8 +504,10 @@ impl FactoryContract {
         env.storage().instance().remove(&PENDING_HASH_KEY);
         env.storage().instance().remove(&EXECUTE_AFTER_KEY);
 
-        env.events()
-            .publish((TOPIC_UPGRADE_EXECUTED,), (EVENT_VERSION, new_wasm_hash.clone()));
+        env.events().publish(
+            (TOPIC_UPGRADE_EXECUTED,),
+            (EVENT_VERSION, new_wasm_hash.clone()),
+        );
 
         env.deployer().update_current_contract_wasm(new_wasm_hash);
         Ok(())
@@ -528,7 +538,8 @@ impl FactoryContract {
         env.storage().instance().remove(&PENDING_HASH_KEY);
         env.storage().instance().remove(&EXECUTE_AFTER_KEY);
 
-        env.events().publish((TOPIC_UPGRADE_CANCELLED,), (EVENT_VERSION,));
+        env.events()
+            .publish((TOPIC_UPGRADE_CANCELLED,), (EVENT_VERSION,));
         Ok(())
     }
 
