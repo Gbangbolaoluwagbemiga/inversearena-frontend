@@ -1,7 +1,8 @@
 #![no_std]
 
 use soroban_sdk::{
-
+    contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, token,
+    Address, Env, Symbol, Vec,
 };
 
 const ADMIN_KEY: Symbol = symbol_short!("ADMIN");
@@ -9,10 +10,16 @@ const TREASURY_KEY: Symbol = symbol_short!("TREAS");
 const TOPIC_PAYOUT_EXECUTED: Symbol = symbol_short!("PAYOUT");
 const TOPIC_DUST_COLLECTED: Symbol = symbol_short!("DUST");
 
+// ── TTL constants for persistent payout records (~31 days) ───────────────────
+const PAYOUT_TTL_THRESHOLD: u32 = 100_000;
+const PAYOUT_TTL_EXTEND_TO: u32 = 535_680;
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
-
+    Payout(Symbol, u32, u32, Address),
+    CurrencyToken(Symbol),
+    PrizePayout(u32),
 }
 
 #[contracttype]
@@ -125,7 +132,7 @@ impl PayoutContract {
         let payout_key = DataKey::Payout(ctx.clone(), pool_id, round_id, winner.clone());
         if env
             .storage()
-            .instance()
+            .persistent()
             .get::<_, PayoutData>(&payout_key)
             .is_some()
         {
@@ -138,7 +145,10 @@ impl PayoutContract {
             currency: currency.clone(),
             paid: true,
         };
-        env.storage().instance().set(&payout_key, &payout_data);
+        env.storage().persistent().set(&payout_key, &payout_data);
+        env.storage()
+            .persistent()
+            .extend_ttl(&payout_key, PAYOUT_TTL_THRESHOLD, PAYOUT_TTL_EXTEND_TO);
 
         // Transfer tokens to winner if a token address is registered for this currency.
         if let Some(token_address) = env
@@ -169,7 +179,7 @@ impl PayoutContract {
     ) -> bool {
         let payout_key = DataKey::Payout(ctx, pool_id, round_id, winner);
         env.storage()
-            .instance()
+            .persistent()
             .get::<_, PayoutData>(&payout_key)
             .map(|p| p.paid)
             .unwrap_or(false)
@@ -184,7 +194,7 @@ impl PayoutContract {
         winner: Address,
     ) -> Option<PayoutData> {
         let payout_key = DataKey::Payout(ctx, pool_id, round_id, winner);
-        env.storage().instance().get(&payout_key)
+        env.storage().persistent().get(&payout_key)
     }
 
     pub fn distribute_prize(

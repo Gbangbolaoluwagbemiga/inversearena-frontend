@@ -241,3 +241,31 @@ fn test_distribute_prize_invalid_amount_returns_error() {
     let result = client.try_distribute_prize(&5u32, &0i128, &winners, &token_id);
     assert_eq!(result, Err(Ok(PayoutError::InvalidAmount)));
 }
+
+// ── persistent storage TTL ────────────────────────────────────────────────────
+
+#[test]
+fn payout_record_survives_ttl_threshold() {
+    use soroban_sdk::testutils::Ledger;
+
+    let (env, admin, client) = setup();
+    let winner = Address::generate(&env);
+    let ctx = symbol_short!("arena_1");
+    let pool_id = 1u32;
+    let round_id = 1u32;
+    let amount = 500i128;
+    let currency = symbol_short!("XLM");
+
+    client.distribute_winnings(&admin, &ctx, &pool_id, &round_id, &winner, &amount, &currency);
+
+    // Advance ledger past PAYOUT_TTL_THRESHOLD (100_000) — record must still exist.
+    env.ledger().with_mut(|l| {
+        l.sequence_number += 100_001;
+        l.timestamp += 100_001 * 5;
+    });
+
+    assert!(
+        client.is_payout_processed(&ctx, &pool_id, &round_id, &winner),
+        "payout record must survive past TTL threshold due to extend_ttl"
+    );
+}
