@@ -20,6 +20,9 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Add wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -34,6 +37,25 @@ jobs:
       - name: Run contract tests
         working-directory: ./contract
         run: cargo test --workspace
+
+      - name: Install Soroban CLI system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libdbus-1-dev libudev-dev libusb-1.0-0-dev
+
+      - name: Install Soroban CLI
+        run: cargo install --locked soroban-cli
+
+      - name: Optimize contract WASM and enforce size budget
+        working-directory: ./contract
+        run: ./scripts/optimize_and_check_wasm.sh
+
+      - name: Upload WASM size metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-wasm-size-metrics
+          path: contract/target/wasm-metrics/sizes.md
+          if-no-files-found: error
 
       - name: Build contract docs
         working-directory: ./contract

@@ -76,6 +76,18 @@ export function buildStakeCallOperation(
   );
 }
 
+export function buildUnstakeCallOperation(
+  stakingContract: Contract,
+  sharesStroops: bigint,
+  stakerPublicKey: string,
+): Operation {
+  return stakingContract.call(
+    "unstake",
+    encodeAddress(stakerPublicKey),
+    encodeAmount(sharesStroops),
+  );
+}
+
 export function buildJoinCallOperation(poolContract: Contract): Operation {
   return poolContract.call("join");
 }
@@ -108,6 +120,16 @@ export function buildGetUserStateCallOperation(
 ): Operation {
   return arenaContract.call(
     "get_user_state",
+    encodeAddress(userPublicKey),
+  );
+}
+
+export function buildGetFullStateCallOperation(
+  arenaContract: Contract,
+  userPublicKey: string,
+): Operation {
+  return arenaContract.call(
+    "get_full_state",
     encodeAddress(userPublicKey),
   );
 }

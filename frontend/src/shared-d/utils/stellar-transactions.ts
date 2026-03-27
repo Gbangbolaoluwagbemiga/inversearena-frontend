@@ -38,10 +38,10 @@ import {
 import {
   buildClaimCallOperation,
   buildCreatePoolCallOperation,
-  buildGetArenaStateCallOperation,
-  buildGetUserStateCallOperation,
+  buildGetFullStateCallOperation,
   buildJoinCallOperation,
   buildStakeCallOperation,
+  buildUnstakeCallOperation,
   buildSubmitChoiceCallOperation,
   composeUnsignedTransaction,
 } from "@/shared-d/utils/soroban-transaction-composer";
@@ -163,6 +163,58 @@ export async function buildStakeProtocolTransaction(
     const operation = buildStakeCallOperation(
       stakingContract,
       amountStroops,
+      validatedPublicKey,
+    );
+
+    const builtTx = composeUnsignedTransaction(account, {
+      fee: getDefaultInvokeBaseFee(),
+      networkPassphrase: NETWORK_PASSPHRASE,
+      timeout: getInfiniteTimeout(),
+      operation,
+    });
+
+    return server.prepareTransaction(builtTx);
+  } catch (error) {
+    throw parseContractError(error, FN);
+  }
+}
+
+/**
+ * Build an unsigned transaction to unstake shares via the protocol contract.
+ * Uses Soroban prepareTransaction for correct footprint and fees.
+ */
+export async function buildUnstakeProtocolTransaction(
+  publicKey: string,
+  shares: number,
+) {
+  const FN = "buildUnstakeProtocolTransaction";
+  try {
+    const validatedPublicKey = StellarPublicKeySchema.parse(publicKey);
+    const validatedShares = PositiveAmountSchema.parse(shares);
+
+    if (
+      !STAKING_CONTRACT_ID ||
+      STAKING_CONTRACT_ID === STAKING_CONTRACT_PLACEHOLDER ||
+      STAKING_CONTRACT_ID.includes("...")
+    ) {
+      throw new ContractError({
+        code: ContractErrorCode.CONFIG_MISSING,
+        message:
+          "Staking contract not configured. Add NEXT_PUBLIC_STAKING_CONTRACT_ID to .env.local with your Soroban contract address.",
+        fn: FN,
+      });
+    }
+
+    const server = defaultSorobanClients.createRpcServer();
+    const account = await getAccount(validatedPublicKey, FN);
+    const stakingContract = defaultSorobanClients.createContract(
+      STAKING_CONTRACT_ID,
+    );
+
+    const sharesStroops = BigInt(Math.floor(validatedShares * 10_000_000));
+    const operation = buildUnstakeCallOperation(
+      stakingContract,
+      sharesStroops,
       validatedPublicKey,
     );
 
@@ -321,8 +373,14 @@ export async function fetchArenaState(
       "0",
     );
 
-    const getStateOperation =
-      buildGetArenaStateCallOperation(arenaContract);
+    const stateReaderAddress =
+      validatedUserAddress ||
+      "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+
+    const getStateOperation = buildGetFullStateCallOperation(
+      arenaContract,
+      stateReaderAddress,
+    );
     const stateTx = composeUnsignedTransaction(dummyAccount, {
       fee: getDefaultInvokeBaseFee(),
       networkPassphrase: NETWORK_PASSPHRASE,
@@ -356,35 +414,8 @@ export async function fetchArenaState(
     const currentStake = extractI128FromScVal(stateData, "current_stake") || 0;
     const potentialPayout =
       extractI128FromScVal(stateData, "potential_payout") || 0;
-
-    let isUserIn = false;
-    let hasWon = false;
-
-    if (validatedUserAddress) {
-      const userStateOperation = buildGetUserStateCallOperation(
-        arenaContract,
-        validatedUserAddress,
-      );
-
-      const userStateTx = composeUnsignedTransaction(dummyAccount, {
-        fee: getDefaultInvokeBaseFee(),
-        networkPassphrase: NETWORK_PASSPHRASE,
-        timeout: getShortTxTimeoutSeconds(),
-        operation: userStateOperation,
-      });
-
-      const userSimulation = await server.simulateTransaction(userStateTx);
-
-      if (
-        !("error" in userSimulation) &&
-        "result" in userSimulation &&
-        userSimulation.result?.retval
-      ) {
-        const userData = userSimulation.result.retval;
-        isUserIn = extractBoolFromScVal(userData, "is_active") || false;
-        hasWon = extractBoolFromScVal(userData, "has_won") || false;
-      }
-    }
+    const isUserIn = extractBoolFromScVal(stateData, "is_active") || false;
+    const hasWon = extractBoolFromScVal(stateData, "has_won") || false;
 
     return {
       arenaId: validatedArenaId,
