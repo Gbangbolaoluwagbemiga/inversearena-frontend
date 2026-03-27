@@ -1,8 +1,8 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, token,
-    Address, Env, Symbol, Vec,
+    Address, Env, Symbol, Vec, contract, contracterror, contractimpl, contracttype,
+    panic_with_error, symbol_short, token,
 };
 
 const ADMIN_KEY: Symbol = symbol_short!("ADMIN");
@@ -17,8 +17,8 @@ const PAYOUT_TTL_EXTEND_TO: u32 = 535_680;
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
-    Payout(Symbol, u32, u32, Address),
     CurrencyToken(Symbol),
+    Payout(Symbol, u32, u32, Address),
     PrizePayout(u32),
 }
 
