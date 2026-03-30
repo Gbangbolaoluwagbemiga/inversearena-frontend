@@ -71,6 +71,48 @@ Codes are grouped by **range** so each crate can reserve a band. Implement new v
 
 Any number **not** listed above should be treated as **unknown** on the client: show a generic message and include `(on-chain code N)` for support. When adding a new code, assign the next free slot in the correct range and update both this file and `contract-error-registry.ts`.
 
+### Arena contract — Rust `ArenaError` (`contract/arena`)
+
+The arena pool contract uses `#[contracterror]` with **explicit** `repr(u32)` values (not the 200–299 band above). These are the codes emitted by `ArenaContract`:
+
+| Code | Variant | Meaning |
+|------|---------|---------|
+| 1 | `AlreadyInitialized` | `init` called twice |
+| 2 | `InvalidRoundSpeed` | Zero round speed |
+| 3 | `RoundAlreadyActive` | `start_round` while a round is open |
+| 4 | `NoActiveRound` | Operation requires an active round |
+| 5 | `SubmissionWindowClosed` | Past deadline |
+| 6 | `SubmissionAlreadyExists` | Duplicate submission |
+| 7 | `RoundStillOpen` | `timeout_round` before deadline |
+| 8 | `RoundDeadlineOverflow` | Ledger math overflow / round mismatch |
+| 9 | `NotInitialized` | Missing `init` |
+| 10 | `Paused` | Contract paused |
+| 11 | `ArenaFull` | Participant cap (admin capacity or hard bound) |
+| 12 | `AlreadyJoined` | Duplicate `join` |
+| 13 | `InvalidAmount` | Non-positive stake |
+| 14 | `NoPrizeToClaim` | No winner record |
+| 15 | `AlreadyClaimed` | `claim` already used |
+| 16 | `ReentrancyGuard` | Reserved |
+| 17 | `NotASurvivor` | Reserved |
+| 18 | `GameAlreadyFinished` | Game ended |
+| 19 | `TokenNotSet` | Token not configured |
+| 20 | `MaxSubmissionsPerRound` | Per-round submission bound (`contract/BOUNDS.md`) |
+| 21 | `PlayerEliminated` | Eliminated player attempted action |
+| 22 | `WrongRoundNumber` | Submitted for wrong round |
+| 23 | `NotEnoughPlayers` | Too few players to start/resolve round |
+| 24 | `InvalidCapacity` | `set_capacity` value out of `[MIN, MAX]` range |
+| 25 | `NoPendingUpgrade` | `execute_upgrade`/`cancel_upgrade` with no proposal |
+| 26 | `TimelockNotExpired` | `execute_upgrade` called before 48-hour timelock |
+
+**ABI snapshot:** `contract/arena/abi_snapshot.json` guards these ordinals in CI (`abi_guard` tests).
+
+> **Required process — every new `ArenaError` variant must be added in the same PR to all three places:**
+> 1. `contract/arena/src/lib.rs` — add the variant with its explicit `repr(u32)` value.
+> 2. `contract/arena/abi_snapshot.json` — add `"VariantName": N` to the `arena_error` object.
+> 3. `contract/arena/src/abi_guard.rs` — add `("VariantName", ArenaError::VariantName)` to the `pairs` slice.
+>
+> Omitting any of the three lets `cargo test` pass while the snapshot is stale, providing false safety for downstream consumers that branch on error codes.
+
 ---
 
 ## Infrastructure / network errors (non-contract codes)

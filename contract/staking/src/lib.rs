@@ -228,3 +228,6 @@ fn require_not_paused(env: &Env) -> Result<(), StakingError> {
 
 #[cfg(test)]
 mod test;
+
+#[cfg(test)]
+mod integration_tests;

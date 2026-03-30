@@ -2,6 +2,15 @@
 
 import { ChooseYourFate, ChoiceCard, TensionBar, Timer, TotalYieldPot } from "@/components/arena/core";
 import { OnboardingTour } from "@/components/arena-v2/onboarding/OnboardingTour";
+import { StatCard } from "@/components/arena-v2/stats/StatCard";
+import { EliminationLog } from "@/components/arena-v2/stats/EliminationLog";
+import { ArenaFooter } from "@/components/arena-v2/footer/ArenaFooter";
+
+const MOCK_ELIMINATION_LOG = [
+  { id: "1", label: "USER 9021 X", status: "terminated" as const },
+  { id: "2", label: "ALPHA.BRAVO.9", status: "terminated" as const },
+  { id: "3", label: "YOU", status: "active" as const },
+];
 
 export default function ArenaV2Page() {
   return (
@@ -29,20 +38,18 @@ export default function ArenaV2Page() {
           <ChoiceCard type="tails" estimatedYield={59} />
         </div>
 
-        <footer className="grid gap-4 rounded-sm border border-white/20 bg-black/55 p-4 font-display text-xs tracking-[0.16em] text-white/70 sm:grid-cols-3">
-          <div>
-            <p className="mb-1 text-[10px] uppercase text-white/40">Round Pool</p>
-            <p className="font-pixel text-lg text-neon-green">$128,221.35</p>
-          </div>
-          <div>
-            <p className="mb-1 text-[10px] uppercase text-white/40">Players In</p>
-            <p className="font-pixel text-lg text-white">512 / 1024</p>
-          </div>
-          <div>
-            <p className="mb-1 text-[10px] uppercase text-white/40">Protocol</p>
-            <p className="font-pixel text-lg text-neon-green">Majority Eliminated</p>
-          </div>
-        </footer>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard variant="survivors" current={128} total={1024} />
+          <StatCard
+            variant="potential"
+            amount="$2,402"
+            subtitle="Stellar/Soroban Network Verified"
+          />
+          <StatCard variant="elimination" nextCount={64} />
+          <EliminationLog entries={MOCK_ELIMINATION_LOG} />
+        </div>
+
+        <ArenaFooter />
       </section>
 
       <OnboardingTour />
