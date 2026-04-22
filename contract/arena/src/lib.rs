@@ -40,6 +40,7 @@ const TOPIC_UNPAUSED: Symbol = symbol_short!("UNPAUSED");
 const TOPIC_ROUND_STARTED: Symbol = symbol_short!("R_START");
 const TOPIC_ROUND_TIMEOUT: Symbol = symbol_short!("R_TOUT");
 const TOPIC_ROUND_RESOLVED: Symbol = symbol_short!("RSLVD");
+const TOPIC_CHOICE_SUBMITTED: Symbol = symbol_short!("CH_SUB");
 const TOPIC_WINNER_SET: Symbol = symbol_short!("WIN_SET");
 const TOPIC_CLAIM: Symbol = symbol_short!("CLAIM");
 const TOPIC_LEAVE: Symbol = symbol_short!("LEAVE");
@@ -775,7 +776,15 @@ impl ArenaContract {
                 .expect("submit_choice: round flags invariant violated");
         }
 
-        set_state(&env, arena_id, &state);
+        storage(&env).set(&DataKey::Round, &round);
+        bump(&env, &DataKey::Round);
+
+        // Emit without the choice value to preserve submission privacy.
+        env.events().publish(
+            (TOPIC_CHOICE_SUBMITTED,),
+            (player, round.round_number, EVENT_VERSION),
+        );
+
         Ok(())
     }
 
@@ -1342,5 +1351,7 @@ mod abi_guard;
 mod integration_tests;
 #[cfg(test)]
 mod state_machine_tests;
+#[cfg(test)]
+mod submit_choice_tests;
 #[cfg(test)]
 mod test;
