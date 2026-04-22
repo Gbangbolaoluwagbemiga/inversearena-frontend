@@ -722,6 +722,9 @@ impl ArenaContract {
 
         state.round.total_submissions += 1;
 
+        let sub_count: u32 = env.storage().instance().get(&SUBMITTED_COUNT_KEY).unwrap_or(0);
+        env.storage().instance().set(&SUBMITTED_COUNT_KEY, &(sub_count + 1));
+
         #[cfg(debug_assertions)]
         {
             crate::invariants::check_submission_count_monotonic(
