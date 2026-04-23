@@ -2,7 +2,7 @@
 
 use soroban_sdk::{
     Address, BytesN, Env, IntoVal, String, Symbol, Vec, contract, contracterror, contractimpl,
-    contracttype, symbol_short, xdr::ToXdr,
+    contracttype, symbol_short, xdr::ToXdr, token,
 };
 
 #[cfg(test)]
@@ -24,6 +24,11 @@ const PAUSED_KEY: Symbol = symbol_short!("PAUSED");
 const WIN_FEE_BPS_KEY: Symbol = symbol_short!("FEE_BPS");
 const PENDING_FEE_KEY: Symbol = symbol_short!("P_FEE");
 const FEE_AFTER_KEY: Symbol = symbol_short!("F_AFTER");
+
+// ── Arena creation fee config ─────────────────────────────────────────────────
+const CREATION_FEE_KEY: Symbol = symbol_short!("CR_FEE");
+const CREATION_TOKEN_KEY: Symbol = symbol_short!("CR_TOK");
+const CREATION_FEE_ACCUM_KEY: Symbol = symbol_short!("CR_ACC");
 
 /// Current schema version. Bump this when storage layout changes.
 const CURRENT_SCHEMA_VERSION: u32 = 1;
@@ -103,9 +108,12 @@ const TOPIC_TOKEN_REMOVED: Symbol = symbol_short!("TOK_REM");
 const TOPIC_MIN_STAKE_UPDATED: Symbol = symbol_short!("MIN_UP");
 const TOPIC_PAUSED: Symbol = symbol_short!("PAUSED");
 const TOPIC_UNPAUSED: Symbol = symbol_short!("UNPAUSED");
+const TOPIC_ARENA_WL_ADD: Symbol = symbol_short!("AWL_ADD");
+const TOPIC_ARENA_WL_REM: Symbol = symbol_short!("AWL_REM");
 const TOPIC_FEE_QUEUED: Symbol = symbol_short!("FEE_Q");
 const TOPIC_FEE_EXECUTED: Symbol = symbol_short!("FEE_EX");
 const TOPIC_FEE_CANCELLED: Symbol = symbol_short!("FEE_CAN");
+const TOPIC_FEE_CONFIG_UPDATED: Symbol = symbol_short!("CRF_UP");
 
 /// Event payload version. Include in every event data tuple so consumers
 /// can detect schema changes without re-deploying indexers.
@@ -163,8 +171,10 @@ pub enum Error {
     NoPendingFeeUpdate = 20,
     /// Provided fee exceeds `MAX_WIN_FEE_BPS` (2000).
     FeeTooHigh = 21,
-    /// The hash provided to `execute_upgrade` does not match the stored proposal hash.
-    HashMismatch = 17,
+    /// Creation fee amount is negative.
+    InvalidCreationFee = 22,
+    /// Host does not hold enough `fee_token` to pay the configured creation fee.
+    InsufficientCreationFee = 23,
 }
 
 // ── Contract ──────────────────────────────────────────────────────────────────
@@ -200,6 +210,17 @@ impl FactoryContract {
         env.storage()
             .instance()
             .set(&WIN_FEE_BPS_KEY, &DEFAULT_WIN_FEE_BPS);
+        // Default creation fee is 0 (disabled) with a placeholder token address.
+        // Admin should call `set_creation_fee` to configure the actual token.
+        env.storage()
+            .instance()
+            .set(&CREATION_FEE_KEY, &0i128);
+        env.storage()
+            .instance()
+            .set(&CREATION_TOKEN_KEY, &env.current_contract_address());
+        env.storage()
+            .instance()
+            .set(&CREATION_FEE_ACCUM_KEY, &0i128);
         env.storage()
             .instance()
             .set(&SCHEMA_VERSION_KEY, &CURRENT_SCHEMA_VERSION);
@@ -470,6 +491,42 @@ impl FactoryContract {
         }
     }
 
+    // ── Arena creation fee ───────────────────────────────────────────────────
+
+    /// Admin-only: set the flat token fee charged to hosts when creating an arena.
+    ///
+    /// The fee is transferred from the host to this factory contract during `create_pool`
+    /// before any arena deployment occurs.
+    pub fn set_creation_fee(env: Env, amount: i128, token: Address) -> Result<(), Error> {
+        let admin = require_admin(&env)?;
+        admin.require_auth();
+
+        if amount < 0 {
+            return Err(Error::InvalidCreationFee);
+        }
+
+        let old_fee: i128 = env.storage().instance().get(&CREATION_FEE_KEY).unwrap_or(0i128);
+        env.storage().instance().set(&CREATION_FEE_KEY, &amount);
+        env.storage().instance().set(&CREATION_TOKEN_KEY, &token);
+
+        env.events().publish(
+            (TOPIC_FEE_CONFIG_UPDATED,),
+            (EVENT_VERSION, old_fee, amount, token),
+        );
+        Ok(())
+    }
+
+    /// Public read: get the configured (creation_fee, fee_token).
+    pub fn get_creation_fee(env: Env) -> (i128, Address) {
+        let fee: i128 = env.storage().instance().get(&CREATION_FEE_KEY).unwrap_or(0i128);
+        let tok: Address = env
+            .storage()
+            .instance()
+            .get(&CREATION_TOKEN_KEY)
+            .unwrap_or(env.current_contract_address());
+        (fee, tok)
+    }
+
     /// Create a new pool (arena). Only admin or whitelisted hosts can call this.
     ///
     /// The caller must provide a valid stake amount >= minimum stake and a
@@ -529,6 +586,26 @@ impl FactoryContract {
             return Err(Error::StakeBelowMinimum);
         }
 
+        // ── Arena creation fee (fee-then-deploy) ─────────────────────────────
+        let (creation_fee, fee_token) = Self::get_creation_fee(env.clone());
+        if creation_fee > 0 {
+            let token_client = token::Client::new(&env, &fee_token);
+            let balance = token_client.balance(&caller);
+            if balance < creation_fee {
+                return Err(Error::InsufficientCreationFee);
+            }
+            token_client.transfer(&caller, &env.current_contract_address(), &creation_fee);
+
+            let prev_acc: i128 = env
+                .storage()
+                .instance()
+                .get(&CREATION_FEE_ACCUM_KEY)
+                .unwrap_or(0i128);
+            env.storage()
+                .instance()
+                .set(&CREATION_FEE_ACCUM_KEY, &(prev_acc + creation_fee));
+        }
+
         let wasm_hash: BytesN<32> = env
             .storage()
             .instance()
@@ -570,7 +647,10 @@ impl FactoryContract {
         };
 
         #[cfg(not(test))]
-        let arena_address = env.deployer().with_current_contract(salt).deploy(wasm_hash);
+        let arena_address = env
+            .deployer()
+            .with_current_contract(salt)
+            .deploy_v2(wasm_hash, ());
 
         // ── Initialisation ──────────────────────────────────────────────────────
 
