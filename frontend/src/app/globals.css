@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
 @theme {
   --color-neon-green: #37FF1C;
   --color-neon-pink: #FF0055;

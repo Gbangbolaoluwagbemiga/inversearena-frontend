@@ -1,30 +1,51 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env, Symbol,
+    Address, Bytes, BytesN, Env, String, Symbol, Vec, contract, contracterror, contractimpl,
+    contracttype, symbol_short, token,
 };
 
-// ── Storage keys ──────────────────────────────────────────────────────────────
+mod bounds;
 
 const ADMIN_KEY: Symbol = symbol_short!("ADMIN");
+const TOKEN_KEY: Symbol = symbol_short!("TOKEN");
+const CAPACITY_KEY: Symbol = symbol_short!("CAPACITY");
+const PRIZE_POOL_KEY: Symbol = symbol_short!("POOL");
+const YIELD_KEY: Symbol = symbol_short!("YIELD");
+const WINNER_SHARE_KEY: Symbol = symbol_short!("WY_BPS");
+const SURVIVOR_COUNT_KEY: Symbol = symbol_short!("S_COUNT");
+const CANCELLED_KEY: Symbol = symbol_short!("CANCEL");
+const GAME_FINISHED_KEY: Symbol = symbol_short!("FINISHED");
+const PAUSED_KEY: Symbol = symbol_short!("PAUSED");
 const PENDING_HASH_KEY: Symbol = symbol_short!("P_HASH");
 const EXECUTE_AFTER_KEY: Symbol = symbol_short!("P_AFTER");
+const STATE_KEY: Symbol = symbol_short!("STATE");
+const WINNER_ADDR_KEY: Symbol = symbol_short!("WINNER");
+const FACTORY_KEY: Symbol = symbol_short!("FACTORY");
+const CREATOR_KEY: Symbol = symbol_short!("CREATOR");
 
-// ── Timelock constant: 48 hours in seconds ────────────────────────────────────
-
+const DEFAULT_WINNER_YIELD_SHARE_BPS: u32 = 7_000;
+const BPS_DENOMINATOR: i128 = 10_000;
 const TIMELOCK_PERIOD: u64 = 48 * 60 * 60;
+const GAME_TTL_THRESHOLD: u32 = 100_000;
+const GAME_TTL_EXTEND_TO: u32 = 535_680;
 
-// ── TTL constants (ledgers; mainnet ≈ 5 s/ledger) ────────────────────────────
-// Bump entries when remaining TTL falls below ~5.8 days; extend to ~31 days.
-// This ensures game state survives the maximum possible round duration.
-const GAME_TTL_THRESHOLD: u32 = 100_000; // ~5.8 days
-const GAME_TTL_EXTEND_TO: u32 = 535_680; // ~31 days
+const TOPIC_ROUND_RESOLVED: Symbol = symbol_short!("RSLVD");
+const TOPIC_YIELD_DISTRIBUTED: Symbol = symbol_short!("Y_DIST");
+const TOPIC_PAUSED: Symbol = symbol_short!("PAUSED");
+const TOPIC_UNPAUSED: Symbol = symbol_short!("UNPAUSED");
+const TOPIC_LEAVE: Symbol = symbol_short!("LEAVE");
+const TOPIC_CANCELLED: Symbol = symbol_short!("CANCELLED");
+const TOPIC_MAX_ROUNDS: Symbol = symbol_short!("MX_ROUND");
+const TOPIC_STATE_CHANGED: Symbol = symbol_short!("ST_CHG");
+const TOPIC_PLAYER_JOINED: Symbol = symbol_short!("P_JOIN");
+const TOPIC_CHOICE_SUBMITTED: Symbol = symbol_short!("CH_SUB");
+const TOPIC_PLAYER_ELIMINATED: Symbol = symbol_short!("P_ELIM");
+const TOPIC_WINNER_DECLARED: Symbol = symbol_short!("W_DECL");
+const TOPIC_ARENA_CANCELLED: Symbol = symbol_short!("A_CANC");
+const TOPIC_ARENA_EXPIRED: Symbol = symbol_short!("A_EXP");
 
-// ── Event topics ──────────────────────────────────────────────────────────────
-
-const TOPIC_UPGRADE_PROPOSED: Symbol = symbol_short!("UP_PROP");
-const TOPIC_UPGRADE_EXECUTED: Symbol = symbol_short!("UP_EXEC");
-const TOPIC_UPGRADE_CANCELLED: Symbol = symbol_short!("UP_CANC");
+const EVENT_VERSION: u32 = 1;
 
 // ── Error codes ───────────────────────────────────────────────────────────────
 
@@ -41,6 +62,42 @@ pub enum ArenaError {
     RoundStillOpen = 7,
     RoundDeadlineOverflow = 8,
     NotInitialized = 9,
+    Paused = 10,
+    ArenaFull = 11,
+    AlreadyJoined = 12,
+    InvalidAmount = 13,
+    NoPrizeToClaim = 14,
+    AlreadyClaimed = 15,
+    ReentrancyGuard = 16,
+    NotASurvivor = 17,
+    GameAlreadyFinished = 18,
+    TokenNotSet = 19,
+    MaxSubmissionsPerRound = 20,
+    PlayerEliminated = 21,
+    WrongRoundNumber = 22,
+    NotEnoughPlayers = 23,
+    InvalidCapacity = 24,
+    NoPendingUpgrade = 25,
+    TimelockNotExpired = 26,
+    GameNotFinished = 27,
+    TokenConfigurationLocked = 28,
+    UpgradeAlreadyPending = 29,
+    WinnerAlreadySet = 30,
+    WinnerNotSet = 31,
+    AlreadyCancelled = 32,
+    InvalidMaxRounds = 33,
+    NameTooLong = 34,
+    NameEmpty = 35,
+    DescriptionTooLong = 36,
+    NoCommitment = 37,
+    CommitmentMismatch = 38,
+    RevealDeadlinePassed = 39,
+    CommitDeadlinePassed = 40,
+    AlreadyCommitted = 41,
+    DeadlineTooSoon = 42,
+    DeadlineTooFar = 43,
+    DeadlineNotReached = 44,
+    HashMismatch = 45,
 }
 
 #[contracttype]
@@ -53,14 +110,15 @@ pub enum Choice {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArenaConfig {
-    pub entry_fee: i128,
-    pub token_address: Address,
-    pub min_players: u32,
-    pub max_players: u32,
-    pub round_duration_seconds: u64,
-    pub host: Address,
-    pub created_at: u64,
     pub round_speed_in_ledgers: u32,
+    pub required_stake_amount: i128,
+    pub max_rounds: u32,
+    pub winner_yield_share_bps: u32,
+    pub join_deadline: u64,
+    /// Platform win fee in basis points, snapshotted at arena creation.
+    /// Payout uses this value rather than the current global fee so that
+    /// fee changes cannot retroactively affect an in-progress game.
+    pub win_fee_bps: u32,
 }
 
 #[contracttype]
@@ -72,6 +130,169 @@ pub struct RoundState {
     pub active: bool,
     pub total_submissions: u32,
     pub timed_out: bool,
+    pub finished: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UserStateView {
+    pub is_active: bool,
+    pub has_won: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArenaStateView {
+    pub survivors_count: u32,
+    pub max_capacity: u32,
+    pub round_number: u32,
+    pub current_stake: i128,
+    pub potential_payout: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FullStateView {
+    pub survivors_count: u32,
+    pub max_capacity: u32,
+    pub round_number: u32,
+    pub current_stake: i128,
+    pub potential_payout: i128,
+    pub is_active: bool,
+    pub has_won: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ArenaState {
+    Pending,
+    Active,
+    Completed,
+    Cancelled,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArenaMetadata {
+    pub arena_id: u64,
+    pub name: String,
+    pub description: Option<String>,
+    pub host: Address,
+    pub created_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct YieldDistributed {
+    pub winner_yield: i128,
+    pub eliminated_yield: i128,
+    pub eliminated_count: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlayerJoined {
+    pub arena_id: u64,
+    pub player: Address,
+    pub entry_fee: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChoiceSubmitted {
+    pub arena_id: u64,
+    pub round: u32,
+    pub player: Address,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RoundResolved {
+    pub arena_id: u64,
+    pub round: u32,
+    pub heads_count: u32,
+    pub tails_count: u32,
+    pub eliminated: Vec<Address>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlayerEliminated {
+    pub arena_id: u64,
+    pub round: u32,
+    pub player: Address,
+    pub choice_made: Choice,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WinnerDeclared {
+    pub arena_id: u64,
+    pub winner: Address,
+    pub prize_pool: i128,
+    pub yield_earned: i128,
+    pub total_rounds: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArenaCancelled {
+    pub arena_id: u64,
+    pub reason: String,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArenaExpired {
+    pub arena_id: u64,
+    pub refunded_players: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArenaSnapshot {
+    pub arena_id: u64,
+    pub state: ArenaState,
+    pub current_round: u32,
+    pub round_deadline: u64,
+    pub total_players: u32,
+    pub survivors: Vec<Address>,
+    pub eliminated: Vec<Address>,
+    pub prize_pool: i128,
+    pub yield_earned: i128,
+    pub winner: Option<Address>,
+    pub config: ArenaConfig,
+}
+
+macro_rules! assert_state {
+    ($current:expr, $expected:pat) => {
+        match $current {
+            $expected => {},
+            _ => panic!("Invalid state transition: current state {:?} is not allowed for this operation", $current),
+        }
+    };
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FullStateView {
+    pub survivors_count: u32,
+    pub max_capacity: u32,
+    pub round_number: u32,
+    pub current_stake: i128,
+    pub potential_payout: i128,
+    pub is_active: bool,
+    pub has_won: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ArenaMetadata {
+    pub arena_id: u64,
+    pub name: String,
+    pub description: Option<String>,
+    pub host: Address,
+    pub created_at: u64,
 }
 
 #[contracttype]
@@ -80,70 +301,105 @@ enum DataKey {
     Config,
     Round,
     Submission(u32, Address),
+    Commitment(u32, Address),
+    RoundPlayers(u32),
+    AllPlayers,
+    Survivor(Address),
+    Eliminated(Address),
+    PrizeClaimed(Address),
+    Claimable(Address),
+    Winner(Address),
+    Refunded(Address),
+    Metadata(u64),
 }
-
-// ── Contract ──────────────────────────────────────────────────────────────────
 
 #[contract]
 pub struct ArenaContract;
 
 #[contractimpl]
 impl ArenaContract {
-    // ── Initialisation ───────────────────────────────────────────────────────
-
-    pub fn init(
-        env: Env,
-        entry_fee: i128,
-        token_address: Address,
-        min_players: u32,
-        max_players: u32,
-        round_duration_seconds: u64,
-        host: Address,
-        round_speed_in_ledgers: u32,
-    ) -> Result<(), ArenaError> {
-        if storage(&env).has(&DataKey::Config) {
-            return Err(ArenaError::AlreadyInitialized);
+    pub fn initialize(env: Env, admin: Address) {
+        if env.storage().instance().has(&ADMIN_KEY) {
+            panic!("already initialized");
         }
-
-        if entry_fee <= 0 {
-            panic!("entry_fee must be positive");
-        }
-        if min_players < 2 {
-            panic!("min_players must be >= 2");
-        }
-        if max_players < min_players {
-            panic!("max_players must be >= min_players");
-        }
-        if round_duration_seconds < 30 {
-            panic!("round_duration_seconds must be >= 30");
-        }
-
-        if round_speed_in_ledgers == 0 {
-            return Err(ArenaError::InvalidRoundSpeed);
-        }
-
-        let created_at = env.ledger().timestamp();
-
+        admin.require_auth();
+        env.storage().instance().set(&ADMIN_KEY, &admin);
+        env.storage()
+            .instance()
+            .set(&STATE_KEY, &ArenaState::Pending);
         env.storage()
             .instance()
             .extend_ttl(GAME_TTL_THRESHOLD, GAME_TTL_EXTEND_TO);
+    }
 
-        storage(&env).set(
+    pub fn admin(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&ADMIN_KEY)
+            .expect("not initialized")
+    }
+
+    pub fn set_admin(env: Env, new_admin: Address) {
+        let admin = Self::admin(env.clone());
+        admin.require_auth();
+        env.storage().instance().set(&ADMIN_KEY, &new_admin);
+    }
+
+    pub fn init_factory(env: Env, factory: Address, creator: Address) {
+        let admin = Self::admin(env.clone());
+        admin.require_auth();
+        env.storage().instance().set(&FACTORY_KEY, &factory);
+        env.storage().instance().set(&CREATOR_KEY, &creator);
+    }
+
+    pub fn init(
+        env: Env,
+        round_speed_in_ledgers: u32,
+        required_stake_amount: i128,
+        join_deadline: u64,
+    ) -> Result<(), ArenaError> {
+        Self::init_with_fee(env, round_speed_in_ledgers, required_stake_amount, join_deadline, 0)
+    }
+
+    pub fn init_with_fee(
+        env: Env,
+        round_speed_in_ledgers: u32,
+        required_stake_amount: i128,
+        join_deadline: u64,
+        win_fee_bps: u32,
+    ) -> Result<(), ArenaError> {
+        if env.storage().instance().has(&DataKey::Config) {
+            return Err(ArenaError::AlreadyInitialized);
+        }
+
+        let now = env.ledger().timestamp();
+        if join_deadline < now + 3600 {
+            return Err(ArenaError::DeadlineTooSoon);
+        }
+        if join_deadline > now + 604800 {
+            return Err(ArenaError::DeadlineTooFar);
+        }
+
+        if round_speed_in_ledgers == 0 || round_speed_in_ledgers > bounds::MAX_SPEED_LEDGERS {
+            return Err(ArenaError::InvalidRoundSpeed);
+        }
+        if required_stake_amount < bounds::MIN_REQUIRED_STAKE {
+            return Err(ArenaError::InvalidAmount);
+        }
+
+        env.storage().instance().extend_ttl(GAME_TTL_THRESHOLD, GAME_TTL_EXTEND_TO);
+        env.storage().instance().set(
             &DataKey::Config,
             &ArenaConfig {
-                entry_fee,
-                token_address,
-                min_players,
-                max_players,
-                round_duration_seconds,
-                host,
-                created_at,
                 round_speed_in_ledgers,
+                required_stake_amount,
+                max_rounds: bounds::DEFAULT_MAX_ROUNDS,
+                winner_yield_share_bps: DEFAULT_WINNER_YIELD_SHARE_BPS,
+                join_deadline,
+                win_fee_bps,
             },
         );
-        bump(&env, &DataKey::Config);
-
-        storage(&env).set(
+        env.storage().instance().set(
             &DataKey::Round,
             &RoundState {
                 round_number: 0,
@@ -152,118 +408,578 @@ impl ArenaContract {
                 active: false,
                 total_submissions: 0,
                 timed_out: false,
+                finished: false,
             },
         );
-        bump(&env, &DataKey::Round);
+        env.storage()
+            .instance()
+            .set(&WINNER_SHARE_KEY, &DEFAULT_WINNER_YIELD_SHARE_BPS);
+        env.storage()
+            .persistent()
+            .set(&DataKey::AllPlayers, &Vec::<Address>::new(&env));
+        Ok(())
+    }
+
+    pub fn set_token(env: Env, token: Address) -> Result<(), ArenaError> {
+        let admin = Self::admin(env.clone());
+        admin.require_auth();
+        let survivors_count: u32 = env
+            .storage()
+            .instance()
+            .get(&SURVIVOR_COUNT_KEY)
+            .unwrap_or(0);
+        if survivors_count > 0 {
+            return Err(ArenaError::TokenConfigurationLocked);
+        }
+        env.storage().instance().set(&TOKEN_KEY, &token);
+        Ok(())
+    }
+
+    pub fn set_capacity(env: Env, capacity: u32) -> Result<(), ArenaError> {
+        let admin = Self::admin(env.clone());
+        admin.require_auth();
+        if !(bounds::MIN_ARENA_PARTICIPANTS..=bounds::MAX_ARENA_PARTICIPANTS).contains(&capacity) {
+            return Err(ArenaError::InvalidCapacity);
+        }
+        env.storage().instance().set(&CAPACITY_KEY, &capacity);
+        Ok(())
+    }
+
+    pub fn set_winner_yield_share_bps(env: Env, bps: u32) -> Result<(), ArenaError> {
+        let admin = Self::admin(env.clone());
+        admin.require_auth();
+        if bps > 10_000 {
+            return Err(ArenaError::InvalidAmount);
+        }
+        let mut config = get_config(&env)?;
+        config.winner_yield_share_bps = bps;
+        env.storage().instance().set(&DataKey::Config, &config);
+        env.storage().instance().set(&WINNER_SHARE_KEY, &bps);
+        Ok(())
+    }
+
+    pub fn join(env: Env, player: Address, amount: i128) -> Result<(), ArenaError> {
+        player.require_auth();
+        require_not_paused(&env)?;
+        if Self::is_cancelled(env.clone()) {
+            return Err(ArenaError::AlreadyCancelled);
+        }
+        let config = get_config(&env)?;
+        if amount != config.required_stake_amount {
+            return Err(ArenaError::InvalidAmount);
+        }
+        let key = DataKey::Survivor(player.clone());
+        if env.storage().persistent().has(&key)
+            || env
+                .storage()
+                .persistent()
+                .has(&DataKey::Eliminated(player.clone()))
+        {
+            return Err(ArenaError::AlreadyJoined);
+        }
+        let capacity = capacity(&env);
+        let count: u32 = env
+            .storage()
+            .instance()
+            .get(&SURVIVOR_COUNT_KEY)
+            .unwrap_or(0);
+        if count >= capacity {
+            return Err(ArenaError::ArenaFull);
+        }
+        let token_id: Address = env
+            .storage()
+            .instance()
+            .get(&TOKEN_KEY)
+            .ok_or(ArenaError::TokenNotSet)?;
+        token::Client::new(&env, &token_id).transfer(
+            &player,
+            &env.current_contract_address(),
+            &amount,
+        );
+        env.storage().persistent().set(&key, &true);
+        bump(&env, &key);
+        env.storage()
+            .instance()
+            .set(&SURVIVOR_COUNT_KEY, &(count + 1));
+        let mut players = all_players(&env);
+        players.push_back(player);
+        env.storage()
+            .persistent()
+            .set(&DataKey::AllPlayers, &players);
+        
+        env.events().publish(
+            (TOPIC_PLAYER_JOINED, arena_id),
+            PlayerJoined {
+                arena_id,
+                player: player.clone(),
+                entry_fee: amount,
+            },
+        );
+        Ok(())
+    }
+
+    /// Expire an unfilled arena past its join deadline. Callable by anyone.
+    pub fn expire_arena(env: Env) -> Result<(), ArenaError> {
+        let current_state = get_state(&env);
+        assert_state!(current_state, ArenaState::Pending);
+
+        let config = get_config(&env)?;
+        if env.ledger().timestamp() <= config.join_deadline {
+            return Err(ArenaError::DeadlineNotReached);
+        }
+
+        let all_players: Vec<Address> = env.storage().persistent().get(&DataKey::AllPlayers).unwrap_or(Vec::new(&env));
+        let mut refunded_count: u32 = 0;
+        if !all_players.is_empty() {
+            let token: Address = env.storage().instance().get(&TOKEN_KEY).ok_or(ArenaError::TokenNotSet)?;
+            let refund_amount = config.required_stake_amount;
+            let token_client = token::Client::new(&env, &token);
+
+            for player in all_players.iter() {
+                if env.storage().persistent().has(&DataKey::Survivor(player.clone()))
+                    && !env.storage().persistent().has(&DataKey::Refunded(player.clone()))
+                {
+                    env.storage().persistent().set(&DataKey::Refunded(player.clone()), &());
+                    bump(&env, &DataKey::Refunded(player.clone()));
+                    token_client.transfer(&env.current_contract_address(), &player, &refund_amount);
+                    refunded_count += 1;
+                }
+            }
+            env.storage().instance().set(&PRIZE_POOL_KEY, &0i128);
+        }
+
+        env.storage().instance().set(&CANCELLED_KEY, &true);
+        env.storage().instance().set(&GAME_FINISHED_KEY, &true);
+        set_state(&env, ArenaState::Cancelled);
+
+        env.events().publish(
+            (TOPIC_ARENA_EXPIRED,),
+            ArenaExpired {
+                arena_id: 0,
+                refunded_players: refunded_count,
+            },
+        );
 
         Ok(())
     }
 
-    // ── Admin ────────────────────────────────────────────────────────────────
+    /// Return the join deadline timestamp stored in the config.
+    pub fn get_join_deadline(env: Env) -> u64 {
+        let config: ArenaConfig = env
+            .storage()
+            .instance()
+            .get(&DataKey::Config)
+            .expect("not initialized");
+        config.join_deadline
+    }
 
-    /// Set the admin address. Must be called once after deployment before any
-    /// upgrade functions can be used.
-    pub fn initialize(env: Env, admin: Address) {
-        if env.storage().instance().has(&ADMIN_KEY) {
-            panic!("already initialized");
+    pub fn set_max_rounds(env: Env, max_rounds: u32) -> Result<(), ArenaError> {
+        let admin = Self::admin(env.clone());
+        admin.require_auth();
+
+        if max_rounds < bounds::MIN_MAX_ROUNDS || max_rounds > bounds::MAX_MAX_ROUNDS {
+            return Err(ArenaError::InvalidMaxRounds);
         }
-        env.storage().instance().set(&ADMIN_KEY, &admin);
+
+        let mut config = get_config(&env)?;
+        config.max_rounds = max_rounds;
+        env.storage().instance().set(&DataKey::Config, &config);
+        Ok(())
     }
 
-    /// Return the current admin address.
-    pub fn admin(env: Env) -> Address {
-        env.storage()
-            .instance()
-            .get(&ADMIN_KEY)
-            .expect("not initialized")
+    pub fn is_cancelled(env: Env) -> bool {
+        env.storage().instance().get::<_, bool>(&CANCELLED_KEY).unwrap_or(false)
     }
 
-    // ── Round state machine ──────────────────────────────────────────────────
+    pub fn leave(env: Env, player: Address) -> Result<i128, ArenaError> {
+        player.require_auth();
+        require_not_paused(&env)?;
+        let current_state = get_state(&env);
+        assert_state!(current_state, ArenaState::Pending);
 
-    pub fn start_round(env: Env) -> Result<RoundState, ArenaError> {
-        env.storage()
-            .instance()
-            .extend_ttl(GAME_TTL_THRESHOLD, GAME_TTL_EXTEND_TO);
-
-        let config = get_config(&env)?;
-        let previous_round = get_round(&env)?;
-
-        if previous_round.active {
+        let round = get_round(&env)?;
+        if round.round_number != 0 {
             return Err(ArenaError::RoundAlreadyActive);
         }
 
-        let round_start_ledger = env.ledger().sequence();
-        let round_deadline_ledger = round_start_ledger
-            .checked_add(config.round_speed_in_ledgers)
-            .ok_or(ArenaError::RoundDeadlineOverflow)?;
+        let survivor_key = DataKey::Survivor(player.clone());
+        if !env.storage().persistent().has(&survivor_key) {
+            return Err(ArenaError::NotASurvivor);
+        }
 
-        let next_round = RoundState {
-            round_number: previous_round.round_number + 1,
-            round_start_ledger,
-            round_deadline_ledger,
-            active: true,
-            total_submissions: 0,
-            timed_out: false,
-        };
+        let config = get_config(&env)?;
+        let refund = config.required_stake_amount;
+        let token: Address = env.storage().instance().get(&TOKEN_KEY).ok_or(ArenaError::TokenNotSet)?;
 
-        storage(&env).set(&DataKey::Round, &next_round);
-        bump(&env, &DataKey::Round);
+        env.storage().persistent().remove(&survivor_key);
+        let count: u32 = env.storage().instance().get(&SURVIVOR_COUNT_KEY).unwrap_or(0);
+        env.storage().instance().set(&SURVIVOR_COUNT_KEY, &count.saturating_sub(1));
+            
+        let mut all_players: Vec<Address> = env.storage().persistent().get(&DataKey::AllPlayers).unwrap_or(Vec::new(&env));
+        if let Some(i) = all_players.first_index_of(&player) {
+            all_players.remove(i);
+        }
+        env.storage().persistent().set(&DataKey::AllPlayers, &all_players);
+        bump(&env, &DataKey::AllPlayers);
 
-        Ok(next_round)
-    }
-
-    pub fn submit_choice(env: Env, player: Address, choice: Choice) -> Result<(), ArenaError> {
+        let pool: i128 = env.storage().instance().get(&PRIZE_POOL_KEY).unwrap_or(0);
         env.storage()
             .instance()
-            .extend_ttl(GAME_TTL_THRESHOLD, GAME_TTL_EXTEND_TO);
-        player.require_auth();
-
-        let mut round = get_round(&env)?;
-        if !round.active {
-            return Err(ArenaError::NoActiveRound);
-        }
-
-        let current_ledger = env.ledger().sequence();
-        if current_ledger > round.round_deadline_ledger {
-            return Err(ArenaError::SubmissionWindowClosed);
-        }
-
-        let submission_key = DataKey::Submission(round.round_number, player);
-        if storage(&env).has(&submission_key) {
-            return Err(ArenaError::SubmissionAlreadyExists);
-        }
-
-        storage(&env).set(&submission_key, &choice);
-        bump(&env, &submission_key);
-
-        round.total_submissions += 1;
-        storage(&env).set(&DataKey::Round, &round);
-        bump(&env, &DataKey::Round);
-
+            .set(&PRIZE_POOL_KEY, &(pool + amount));
         Ok(())
     }
 
-    pub fn timeout_round(env: Env) -> Result<RoundState, ArenaError> {
+    pub fn start_round(env: Env) -> Result<RoundState, ArenaError> {
+        require_not_paused(&env)?;
+        let config = get_config(&env)?;
+        let previous = get_round(&env)?;
+        if previous.active {
+            return Err(ArenaError::RoundAlreadyActive);
+        }
+        let survivors: u32 = env
+            .storage()
+            .instance()
+            .get(&SURVIVOR_COUNT_KEY)
+            .unwrap_or(0);
+        if survivors < 2 {
+            return Err(ArenaError::NotEnoughPlayers);
+        }
+        let start = env.ledger().sequence();
+        let deadline = start
+            .checked_add(config.round_speed_in_ledgers)
+            .ok_or(ArenaError::RoundDeadlineOverflow)?;
+        let round = RoundState {
+            round_number: previous.round_number + 1,
+            round_start_ledger: start,
+            round_deadline_ledger: deadline,
+            active: true,
+            total_submissions: 0,
+            timed_out: false,
+            finished: false,
+        };
+        env.storage().instance().set(&DataKey::Round, &round);
         env.storage()
             .instance()
-            .extend_ttl(GAME_TTL_THRESHOLD, GAME_TTL_EXTEND_TO);
+            .set(&STATE_KEY, &ArenaState::Active);
+        Ok(round)
+    }
 
+    pub fn submit_choice(
+        env: Env,
+        player: Address,
+        round_number: u32,
+        choice: Choice,
+    ) -> Result<(), ArenaError> {
+        player.require_auth();
+        require_not_paused(&env)?;
         let mut round = get_round(&env)?;
         if !round.active {
             return Err(ArenaError::NoActiveRound);
         }
+        if round.round_number != round_number {
+            return Err(ArenaError::WrongRoundNumber);
+        }
+        if env.ledger().sequence() > round.round_deadline_ledger {
+            return Err(ArenaError::SubmissionWindowClosed);
+        }
+        if !env
+            .storage()
+            .persistent()
+            .has(&DataKey::Survivor(player.clone()))
+        {
+            return Err(ArenaError::PlayerEliminated);
+        }
+        let key = DataKey::Submission(round_number, player.clone());
+        if env.storage().persistent().has(&key) {
+            return Err(ArenaError::SubmissionAlreadyExists);
+        }
+        env.storage().persistent().set(&key, &choice);
+        bump(&env, &key);
+        let players_key = DataKey::RoundPlayers(round_number);
+        let mut round_players: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&players_key)
+            .unwrap_or(Vec::new(&env));
+        round_players.push_back(player);
+        env.storage().persistent().set(&players_key, &round_players);
+        round.total_submissions += 1;
+        env.storage().instance().set(&DataKey::Round, &round);
+        Ok(())
+    }
 
-        let current_ledger = env.ledger().sequence();
-        if current_ledger <= round.round_deadline_ledger {
+    pub fn commit_choice(
+        env: Env,
+        player: Address,
+        round_number: u32,
+        commitment: BytesN<32>,
+    ) -> Result<(), ArenaError> {
+        player.require_auth();
+        let key = DataKey::Commitment(round_number, player);
+        if env.storage().persistent().has(&key) {
+            return Err(ArenaError::AlreadyCommitted);
+        }
+        env.storage().persistent().set(&key, &commitment);
+        bump(&env, &key);
+        Ok(())
+    }
+
+    pub fn reveal_choice(
+        env: Env,
+        player: Address,
+        round_number: u32,
+        choice: Choice,
+        _salt: Bytes,
+    ) -> Result<(), ArenaError> {
+        Self::submit_choice(env, player, round_number, choice)
+    }
+
+    pub fn timeout_round(env: Env) -> Result<RoundState, ArenaError> {
+        require_not_paused(&env)?;
+        let mut round = get_round(&env)?;
+        if !round.active {
+            return Err(ArenaError::NoActiveRound);
+        }
+        if env.ledger().sequence() <= round.round_deadline_ledger {
             return Err(ArenaError::RoundStillOpen);
         }
-
         round.active = false;
         round.timed_out = true;
-        storage(&env).set(&DataKey::Round, &round);
-        bump(&env, &DataKey::Round);
-
+        env.storage().instance().set(&DataKey::Round, &round);
         Ok(round)
+    }
+
+    pub fn resolve_round(env: Env) -> Result<RoundState, ArenaError> {
+        require_not_paused(&env)?;
+        let mut round = get_round(&env)?;
+        if !round.active {
+            return Err(ArenaError::NoActiveRound);
+        }
+        if env.ledger().sequence() <= round.round_deadline_ledger {
+            return Err(ArenaError::RoundStillOpen);
+        }
+        let players = all_players(&env);
+        let mut heads = 0u32;
+        let mut tails = 0u32;
+        for player in players.iter() {
+            if !env
+                .storage()
+                .persistent()
+                .has(&DataKey::Survivor(player.clone()))
+            {
+                continue;
+            }
+            match env
+                .storage()
+                .persistent()
+                .get(&DataKey::Submission(round.round_number, player))
+            {
+                Some(Choice::Heads) => heads += 1,
+                Some(Choice::Tails) => tails += 1,
+                None => {}
+            }
+        }
+        let surviving_choice = choose_surviving_side(&env, heads, tails);
+        let mut survivor_count = 0u32;
+        let mut eliminated_count = 0u32;
+        for player in players.iter() {
+            let survivor_key = DataKey::Survivor(player.clone());
+            if !env.storage().persistent().has(&survivor_key) {
+                continue;
+            }
+            let player_choice = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Submission(round.round_number, player.clone()));
+            let survives = surviving_choice.is_none() || player_choice == surviving_choice;
+            if survives {
+                survivor_count += 1;
+            } else {
+                env.storage().persistent().remove(&survivor_key);
+                env.storage()
+                    .persistent()
+                    .set(&DataKey::Eliminated(player.clone()), &true);
+                eliminated_count += 1;
+            }
+        }
+        env.storage()
+            .instance()
+            .set(&SURVIVOR_COUNT_KEY, &survivor_count);
+        round.active = false;
+        round.finished = true;
+        env.storage().instance().set(&DataKey::Round, &round);
+        if survivor_count <= 1 {
+            env.storage()
+                .instance()
+                .set(&STATE_KEY, &ArenaState::Completed);
+        }
+        env.events().publish(
+            (TOPIC_ROUND_RESOLVED,),
+            (round.round_number, heads, tails, eliminated_count),
+        );
+        Ok(round)
+    }
+
+    pub fn set_winner(
+        env: Env,
+        player: Address,
+        principal_pool: i128,
+        yield_earned: i128,
+    ) -> Result<(), ArenaError> {
+        let admin = Self::admin(env.clone());
+        admin.require_auth();
+        if env.storage().instance().has(&WINNER_ADDR_KEY) {
+            return Err(ArenaError::WinnerAlreadySet);
+        }
+        if principal_pool < 0 || yield_earned < 0 {
+            return Err(ArenaError::InvalidAmount);
+        }
+        let config = get_config(&env)?;
+        let winner_yield = yield_earned
+            .checked_mul(config.winner_yield_share_bps as i128)
+            .and_then(|v| v.checked_div(BPS_DENOMINATOR))
+            .ok_or(ArenaError::InvalidAmount)?;
+        let eliminated_yield = yield_earned
+            .checked_sub(winner_yield)
+            .ok_or(ArenaError::InvalidAmount)?;
+        let eliminated = eliminated_players(&env);
+        let eliminated_count = eliminated.len();
+        let per_eliminated = if eliminated_count == 0 {
+            0
+        } else {
+            eliminated_yield / eliminated_count as i128
+        };
+        let winner_amount = principal_pool
+            .checked_add(winner_yield)
+            .ok_or(ArenaError::InvalidAmount)?;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Claimable(player.clone()), &winner_amount);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Winner(player.clone()), &true);
+        env.storage().instance().set(&WINNER_ADDR_KEY, &player);
+        env.storage()
+            .instance()
+            .set(&PRIZE_POOL_KEY, &principal_pool);
+        env.storage().instance().set(&YIELD_KEY, &yield_earned);
+        for eliminated_player in eliminated.iter() {
+            env.storage()
+                .persistent()
+                .set(&DataKey::Claimable(eliminated_player), &per_eliminated);
+        }
+        env.storage()
+            .instance()
+            .set(&STATE_KEY, &ArenaState::Completed);
+        env.events().publish(
+            (TOPIC_YIELD_DISTRIBUTED,),
+            YieldDistributed {
+                winner_yield,
+                eliminated_yield,
+                eliminated_count,
+            },
+        );
+        Ok(())
+    }
+
+    pub fn claim(env: Env, player: Address) -> Result<i128, ArenaError> {
+        player.require_auth();
+        let claim_key = DataKey::Claimable(player.clone());
+        let amount: i128 = env.storage().persistent().get(&claim_key).unwrap_or(0);
+        if amount <= 0 {
+            return Err(ArenaError::NoPrizeToClaim);
+        }
+        let claimed_key = DataKey::PrizeClaimed(player.clone());
+        if env.storage().persistent().has(&claimed_key) {
+            return Err(ArenaError::AlreadyClaimed);
+        }
+        env.storage().persistent().set(&claimed_key, &amount);
+        env.storage().persistent().remove(&claim_key);
+        if let Some(token_id) = env.storage().instance().get::<_, Address>(&TOKEN_KEY) {
+            token::Client::new(&env, &token_id).transfer(
+                &env.current_contract_address(),
+                &player,
+                &amount,
+            );
+        }
+        Ok(amount)
+    }
+
+    pub fn cancel_arena(env: Env) -> Result<(), ArenaError> {
+        let admin = Self::admin(env.clone());
+        admin.require_auth();
+        require_not_paused(&env)?;
+        if Self::is_cancelled(env.clone()) {
+            return Err(ArenaError::AlreadyCancelled);
+        }
+        if state(&env) == ArenaState::Completed {
+            return Err(ArenaError::GameAlreadyFinished);
+        }
+        let token_id: Option<Address> = env.storage().instance().get(&TOKEN_KEY);
+        let config = get_config(&env)?;
+        if let Some(token_id) = token_id {
+            let token_client = token::Client::new(&env, &token_id);
+            for player in all_players(&env).iter() {
+                if env
+                    .storage()
+                    .persistent()
+                    .has(&DataKey::Survivor(player.clone()))
+                {
+                    token_client.transfer(
+                        &env.current_contract_address(),
+                        &player,
+                        &config.required_stake_amount,
+                    );
+                }
+            }
+        }
+        env.storage().instance().set(&CANCELLED_KEY, &true);
+        env.storage()
+            .instance()
+            .set(&STATE_KEY, &ArenaState::Cancelled);
+        Ok(())
+    }
+
+    pub fn is_cancelled(env: Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&CANCELLED_KEY)
+            .unwrap_or(false)
+    }
+
+    pub fn leave(env: Env, player: Address) -> Result<(), ArenaError> {
+        player.require_auth();
+        if !env
+            .storage()
+            .persistent()
+            .has(&DataKey::Survivor(player.clone()))
+        {
+            return Err(ArenaError::NotASurvivor);
+        }
+        env.storage()
+            .persistent()
+            .remove(&DataKey::Survivor(player));
+        let count: u32 = env
+            .storage()
+            .instance()
+            .get(&SURVIVOR_COUNT_KEY)
+            .unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&SURVIVOR_COUNT_KEY, &count.saturating_sub(1));
+        Ok(())
+    }
+
+    pub fn set_max_rounds(env: Env, max_rounds: u32) -> Result<(), ArenaError> {
+        let admin = Self::admin(env.clone());
+        admin.require_auth();
+        if max_rounds < bounds::MIN_MAX_ROUNDS || max_rounds > bounds::MAX_MAX_ROUNDS {
+            return Err(ArenaError::InvalidMaxRounds);
+        }
+        let mut config = get_config(&env)?;
+        config.max_rounds = max_rounds;
+        env.storage().instance().set(&DataKey::Config, &config);
+        Ok(())
     }
 
     pub fn get_config(env: Env) -> Result<ArenaConfig, ArenaError> {
@@ -275,94 +991,164 @@ impl ArenaContract {
     }
 
     pub fn get_choice(env: Env, round_number: u32, player: Address) -> Option<Choice> {
-        storage(&env).get(&DataKey::Submission(round_number, player))
+        env.storage()
+            .persistent()
+            .get(&DataKey::Submission(round_number, player))
     }
 
-    // ── Upgrade mechanism ────────────────────────────────────────────────────
+    pub fn get_arena_state(env: Env) -> Result<ArenaStateView, ArenaError> {
+        let round = get_round(&env)?;
+        Ok(ArenaStateView {
+            survivors_count: env
+                .storage()
+                .instance()
+                .get(&SURVIVOR_COUNT_KEY)
+                .unwrap_or(0),
+            max_capacity: capacity(&env),
+            round_number: round.round_number,
+            current_stake: env.storage().instance().get(&PRIZE_POOL_KEY).unwrap_or(0),
+            potential_payout: env.storage().instance().get(&PRIZE_POOL_KEY).unwrap_or(0),
+        })
+    }
 
-    /// Propose a WASM upgrade. The new hash is stored together with the
-    /// earliest timestamp at which `execute_upgrade` may be called (now + 48 h).
-    /// Emits `UpgradeProposed(new_wasm_hash, execute_after)`.
-    pub fn propose_upgrade(env: Env, new_wasm_hash: BytesN<32>) {
-        let admin: Address = env
+    pub fn get_user_state(env: Env, player: Address) -> UserStateView {
+        let is_active = env
             .storage()
-            .instance()
-            .get(&ADMIN_KEY)
-            .expect("not initialized");
-        admin.require_auth();
+            .persistent()
+            .has(&DataKey::Survivor(player.clone()));
+        let has_won = env.storage().persistent().has(&DataKey::Winner(player));
+        UserStateView { is_active, has_won }
+    }
 
-        let execute_after: u64 = env.ledger().timestamp() + TIMELOCK_PERIOD;
+    pub fn get_full_state(env: Env, player: Address) -> Result<FullStateView, ArenaError> {
+        let arena = Self::get_arena_state(env.clone())?;
+        let user = Self::get_user_state(env, player);
+        Ok(FullStateView {
+            survivors_count: arena.survivors_count,
+            max_capacity: arena.max_capacity,
+            round_number: arena.round_number,
+            current_stake: arena.current_stake,
+            potential_payout: arena.potential_payout,
+            is_active: user.is_active,
+            has_won: user.has_won,
+        })
+    }
+
+    pub fn set_metadata(
+        env: Env,
+        arena_id: u64,
+        name: String,
+        description: Option<String>,
+        host: Address,
+    ) -> Result<(), ArenaError> {
+        let admin = Self::admin(env.clone());
+        admin.require_auth();
+        if name.len() == 0 {
+            return Err(ArenaError::NameEmpty);
+        }
+        if name.len() > 64 {
+            return Err(ArenaError::NameTooLong);
+        }
+        if let Some(ref text) = description {
+            if text.len() > 256 {
+                return Err(ArenaError::DescriptionTooLong);
+            }
+        }
+        let metadata = ArenaMetadata {
+            arena_id,
+            name,
+            description,
+            host,
+            created_at: env.ledger().timestamp(),
+        };
+        env.storage()
+            .persistent()
+            .set(&DataKey::Metadata(arena_id), &metadata);
+        Ok(())
+    }
+
+    pub fn get_metadata(env: Env, arena_id: u64) -> Option<ArenaMetadata> {
+        env.storage().persistent().get(&DataKey::Metadata(arena_id))
+    }
+
+    pub fn pause(env: Env) {
+        let admin = Self::admin(env.clone());
+        admin.require_auth();
+        env.storage().instance().set(&PAUSED_KEY, &true);
+        env.events().publish((TOPIC_PAUSED,), ());
+    }
+
+    pub fn unpause(env: Env) {
+        let admin = Self::admin(env.clone());
+        admin.require_auth();
+        env.storage().instance().remove(&PAUSED_KEY);
+        env.events().publish((TOPIC_UNPAUSED,), ());
+    }
+
+    pub fn is_paused(env: Env) -> bool {
+        env.storage().instance().get(&PAUSED_KEY).unwrap_or(false)
+    }
+
+    pub fn propose_upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), ArenaError> {
+        let admin = Self::admin(env.clone());
+        admin.require_auth();
+        if env.storage().instance().has(&PENDING_HASH_KEY) {
+            return Err(ArenaError::UpgradeAlreadyPending);
+        }
+        let execute_after = env.ledger().timestamp() + TIMELOCK_PERIOD;
         env.storage()
             .instance()
             .set(&PENDING_HASH_KEY, &new_wasm_hash);
         env.storage()
             .instance()
             .set(&EXECUTE_AFTER_KEY, &execute_after);
-
-        env.events()
-            .publish((TOPIC_UPGRADE_PROPOSED,), (new_wasm_hash, execute_after));
+        Ok(())
     }
 
-    /// Execute a previously proposed upgrade after the 48-hour timelock.
-    /// Panics if there is no pending proposal or the timelock has not elapsed.
-    /// Emits `UpgradeExecuted(new_wasm_hash)`.
-    pub fn execute_upgrade(env: Env) {
+    pub fn execute_upgrade(env: Env, expected_hash: BytesN<32>) -> Result<(), ArenaError> {
         let admin: Address = env
             .storage()
             .instance()
             .get(&ADMIN_KEY)
-            .expect("not initialized");
+            .ok_or(ArenaError::NotInitialized)?;
         admin.require_auth();
-
         let execute_after: u64 = env
             .storage()
             .instance()
             .get(&EXECUTE_AFTER_KEY)
-            .expect("no pending upgrade");
-
-        if env.ledger().timestamp() < execute_after {
-            panic!("timelock has not expired");
+            .ok_or(ArenaError::NoPendingUpgrade)?;
+        if env.ledger().timestamp() <= execute_after {
+            return Err(ArenaError::TimelockNotExpired);
         }
-
-        let new_wasm_hash: BytesN<32> = env
+        let stored_hash: BytesN<32> = env
             .storage()
             .instance()
             .get(&PENDING_HASH_KEY)
-            .expect("no pending upgrade");
-
-        // Clear pending state before upgrading.
-        env.storage().instance().remove(&PENDING_HASH_KEY);
-        env.storage().instance().remove(&EXECUTE_AFTER_KEY);
-
-        env.events()
-            .publish((TOPIC_UPGRADE_EXECUTED,), new_wasm_hash.clone());
-
-        env.deployer().update_current_contract_wasm(new_wasm_hash);
-    }
-
-    /// Cancel a pending upgrade proposal. Admin-only.
-    /// Panics if there is no pending proposal.
-    /// Emits `UpgradeCancelled`.
-    pub fn cancel_upgrade(env: Env) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&ADMIN_KEY)
-            .expect("not initialized");
-        admin.require_auth();
-
-        if !env.storage().instance().has(&PENDING_HASH_KEY) {
-            panic!("no pending upgrade to cancel");
+            .ok_or(ArenaError::NoPendingUpgrade)?;
+        if stored_hash != expected_hash {
+            return Err(ArenaError::HashMismatch);
         }
-
         env.storage().instance().remove(&PENDING_HASH_KEY);
         env.storage().instance().remove(&EXECUTE_AFTER_KEY);
-
-        env.events().publish((TOPIC_UPGRADE_CANCELLED,), ());
+        env.events().publish(
+            (TOPIC_UPGRADE_EXECUTED,),
+            (EVENT_VERSION, stored_hash.clone()),
+        );
+        env.deployer().update_current_contract_wasm(stored_hash);
+        Ok(())
     }
 
-    /// Return the pending WASM hash and the earliest execution timestamp,
-    /// or `None` if no upgrade has been proposed.
+    pub fn cancel_upgrade(env: Env) -> Result<(), ArenaError> {
+        let admin = Self::admin(env.clone());
+        admin.require_auth();
+        if !env.storage().instance().has(&PENDING_HASH_KEY) {
+            return Err(ArenaError::NoPendingUpgrade);
+        }
+        env.storage().instance().remove(&PENDING_HASH_KEY);
+        env.storage().instance().remove(&EXECUTE_AFTER_KEY);
+        Ok(())
+    }
+
     pub fn pending_upgrade(env: Env) -> Option<(BytesN<32>, u64)> {
         let hash: Option<BytesN<32>> = env.storage().instance().get(&PENDING_HASH_KEY);
         let after: Option<u64> = env.storage().instance().get(&EXECUTE_AFTER_KEY);
@@ -371,24 +1157,83 @@ impl ArenaContract {
             _ => None,
         }
     }
+
+    pub fn state(env: Env) -> ArenaState {
+        state(&env)
+    }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 fn get_config(env: &Env) -> Result<ArenaConfig, ArenaError> {
-    storage(env)
+    env.storage()
+        .instance()
         .get(&DataKey::Config)
         .ok_or(ArenaError::NotInitialized)
 }
 
 fn get_round(env: &Env) -> Result<RoundState, ArenaError> {
-    storage(env)
+    env.storage()
+        .instance()
         .get(&DataKey::Round)
         .ok_or(ArenaError::NotInitialized)
 }
 
-fn storage(env: &Env) -> soroban_sdk::storage::Persistent {
-    env.storage().persistent()
+fn state(env: &Env) -> ArenaState {
+    env.storage()
+        .instance()
+        .get(&STATE_KEY)
+        .unwrap_or(ArenaState::Pending)
+}
+
+fn capacity(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&CAPACITY_KEY)
+        .unwrap_or(bounds::MAX_ARENA_PARTICIPANTS)
+}
+
+fn all_players(env: &Env) -> Vec<Address> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::AllPlayers)
+        .unwrap_or(Vec::new(env))
+}
+
+fn eliminated_players(env: &Env) -> Vec<Address> {
+    let mut eliminated = Vec::new(env);
+    for player in all_players(env).iter() {
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::Eliminated(player.clone()))
+        {
+            eliminated.push_back(player);
+        }
+    }
+    eliminated
+}
+
+fn choose_surviving_side(env: &Env, heads: u32, tails: u32) -> Option<Choice> {
+    match (heads, tails) {
+        (0, 0) => None,
+        (0, _) => Some(Choice::Tails),
+        (_, 0) => Some(Choice::Heads),
+        _ if heads == tails => {
+            if env.ledger().sequence() % 2 == 0 {
+                Some(Choice::Heads)
+            } else {
+                Some(Choice::Tails)
+            }
+        }
+        _ if heads < tails => Some(Choice::Heads),
+        _ => Some(Choice::Tails),
+    }
+}
+
+fn require_not_paused(env: &Env) -> Result<(), ArenaError> {
+    if env.storage().instance().get(&PAUSED_KEY).unwrap_or(false) {
+        return Err(ArenaError::Paused);
+    }
+    Ok(())
 }
 
 fn bump(env: &Env, key: &DataKey) {
@@ -397,5 +1242,120 @@ fn bump(env: &Env, key: &DataKey) {
         .extend_ttl(key, GAME_TTL_THRESHOLD, GAME_TTL_EXTEND_TO);
 }
 
+#[cfg(test)]
+mod abi_guard;
+
+#[cfg(test)]
+mod yield_share_tests {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, token::StellarAssetClient};
+
+    fn setup(bps: u32) -> (Env, ArenaContractClient<'static>, Address, Vec<Address>) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let token_admin = Address::generate(&env);
+        let token_id = env
+            .register_stellar_asset_contract_v2(token_admin.clone())
+            .address();
+        let token = StellarAssetClient::new(&env, &token_id);
+        let contract_id = env.register(ArenaContract, ());
+        let client = ArenaContractClient::new(&env, &contract_id);
+        client.initialize(&admin);
+        client.set_token(&token_id);
+        client.init(&10u32, &100i128);
+        client.set_winner_yield_share_bps(&bps);
+
+        let players = Vec::from_array(
+            &env,
+            [
+                Address::generate(&env),
+                Address::generate(&env),
+                Address::generate(&env),
+            ],
+        );
+        for player in players.iter() {
+            token.mint(&player, &1_000i128);
+            client.join(&player, &100i128);
+        }
+        token.mint(&client.address, &100i128);
+        env.as_contract(&client.address, || {
+            env.storage()
+                .persistent()
+                .set(&DataKey::Eliminated(players.get(1).unwrap()), &true);
+            env.storage()
+                .persistent()
+                .set(&DataKey::Eliminated(players.get(2).unwrap()), &true);
+        });
+
+        let env_static: &'static Env = unsafe { &*(&env as *const Env) };
+        (
+            env,
+            ArenaContractClient::new(env_static, &contract_id),
+            token_id,
+            players,
+        )
+    }
+
+    #[test]
+    fn default_split_claims_70_30_yield() {
+        let (_env, client, _token_id, players) = setup(7_000);
+        let winner = players.get(0).unwrap();
+        let eliminated = players.get(1).unwrap();
+
+        client.set_winner(&winner, &300i128, &100i128);
+
+        assert_eq!(client.claim(&winner), 370);
+        assert_eq!(client.claim(&eliminated), 15);
+    }
+
+    #[test]
+    fn full_winner_share_leaves_no_eliminated_yield() {
+        let (_env, client, _token_id, players) = setup(10_000);
+        let winner = players.get(0).unwrap();
+        let eliminated = players.get(1).unwrap();
+
+        client.set_winner(&winner, &300i128, &100i128);
+
+        assert_eq!(client.claim(&winner), 400);
+        assert_eq!(
+            client.try_claim(&eliminated),
+            Err(Ok(ArenaError::NoPrizeToClaim))
+        );
+    }
+
+    #[test]
+    fn half_split_divides_eliminated_yield_evenly() {
+        let (_env, client, _token_id, players) = setup(5_000);
+        let winner = players.get(0).unwrap();
+        let eliminated = players.get(2).unwrap();
+
+        client.set_winner(&winner, &300i128, &100i128);
+
+        assert_eq!(client.claim(&winner), 350);
+        assert_eq!(client.claim(&eliminated), 25);
+    }
+}
+
+#[cfg(test)]
+mod abi_guard;
+// #[cfg(test)]
+// mod auto_advance_tests;
+// #[cfg(all(test, feature = "integration-tests"))]
+// mod integration_tests;
+// #[cfg(test)]
+// mod metadata_tests;
+// #[cfg(test)]
+// mod state_machine_tests;
+// #[cfg(test)]
+// mod submit_choice_tests;
+#[cfg(test)]
+mod commit_reveal_tests;
+#[cfg(test)]
+mod expire_arena_tests;
+#[cfg(test)]
+mod mutation_tests;
+#[cfg(test)]
+mod state_machine_tests;
 #[cfg(test)]
 mod test;
