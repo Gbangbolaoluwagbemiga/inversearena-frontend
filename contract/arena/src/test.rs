@@ -71,8 +71,7 @@ fn seed_contract_prng(env: &Env, contract_id: &Address, seed: [u8; 32]) {
 }
 
 fn create_client<'a>(env: &'a Env) -> ArenaContractClient<'a> {
-    // Constructor requires admin — use a generated admin for test setup.
-    // Caller must have mock_all_auths active.
+    env.mock_all_auths();
     let admin = Address::generate(env);
     let contract_id = env.register(ArenaContract, (&admin,));
     ArenaContractClient::new(env, &contract_id)
@@ -163,7 +162,7 @@ fn configure_arena(
     let admin = client.admin();
     let (_asset, token_id) = setup_token(env, &admin);
     client.set_token(&token_id);
-    client.init(&round_speed, &TEST_REQUIRED_STAKE);
+    client.init(&round_speed, &TEST_REQUIRED_STAKE, &3600);
     env.mock_all_auths();
     let players = seed_joined_players(env, client, &token_id, player_count);
     (admin, token_id, players)
@@ -182,7 +181,7 @@ fn setup_game(
     let (env, admin, client) = setup_with_admin();
     let (_asset, token_id) = setup_token(&env, &admin);
     client.set_token(&token_id);
-    client.init(&round_speed, &TEST_REQUIRED_STAKE);
+    client.init(&round_speed, &TEST_REQUIRED_STAKE, &3600);
     env.mock_all_auths();
     let players = seed_joined_players(&env, &client, &token_id, player_count);
     (env, admin, client, token_id, players)
@@ -228,7 +227,7 @@ fn test_init_zero_round_speed_returns_invalid() {
     let env = make_env();
     let client = create_client(&env);
     assert_eq!(
-        client.try_init(&0, &TEST_REQUIRED_STAKE),
+        client.try_init(&0, &TEST_REQUIRED_STAKE, &3600),
         Err(Ok(ArenaError::InvalidRoundSpeed))
     );
 }
@@ -239,7 +238,7 @@ fn test_init_min_round_speed_succeeds() {
     let client = create_client(&env);
     assert!(
         client
-            .try_init(&bounds::MIN_SPEED_LEDGERS, &TEST_REQUIRED_STAKE)
+            .try_init(&bounds::MIN_SPEED_LEDGERS, &TEST_REQUIRED_STAKE, &3600)
             .is_ok()
     );
 }
@@ -250,7 +249,7 @@ fn test_init_max_round_speed_succeeds() {
     let client = create_client(&env);
     assert!(
         client
-            .try_init(&bounds::MAX_SPEED_LEDGERS, &TEST_REQUIRED_STAKE)
+            .try_init(&bounds::MAX_SPEED_LEDGERS, &TEST_REQUIRED_STAKE, &3600)
             .is_ok()
     );
 }
@@ -260,7 +259,7 @@ fn test_init_above_max_round_speed_returns_invalid() {
     let env = make_env();
     let client = create_client(&env);
     assert_eq!(
-        client.try_init(&(bounds::MAX_SPEED_LEDGERS + 1), &TEST_REQUIRED_STAKE),
+        client.try_init(&(bounds::MAX_SPEED_LEDGERS + 1), &TEST_REQUIRED_STAKE, &3600),
         Err(Ok(ArenaError::InvalidRoundSpeed))
     );
 }
@@ -431,7 +430,7 @@ fn get_full_state_returns_combined_arena_and_user_state() {
     asset.mint(&other, &100i128);
 
     set_ledger_sequence(&env, 800);
-    client.init(&5, &10i128);
+    client.init(&5, &10i128, &3600);
 
     client.join(&player, &10i128);
     client.join(&other, &10i128);
@@ -699,11 +698,9 @@ fn timelock_cancel_before_execute_clears_pending_and_execute_panics() {
 #[should_panic(expected = "authorize")]
 fn timelock_non_admin_propose_panics() {
     let env = Env::default();
-    let contract_id = env.register(ArenaContract, ());
-    let client = ArenaContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
-    client.initialize(&admin);
-
+    let contract_id = env.register(ArenaContract, (&admin,));
+    let client = ArenaContractClient::new(&env, &contract_id);
     let hash = BytesN::from_array(&env, &[0u8; 32]);
     client.propose_upgrade(&hash);
 }
@@ -712,11 +709,9 @@ fn timelock_non_admin_propose_panics() {
 #[should_panic(expected = "authorize")]
 fn timelock_non_admin_execute_panics() {
     let env = Env::default();
-    let contract_id = env.register(ArenaContract, ());
-    let client = ArenaContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
-    client.initialize(&admin);
-
+    let contract_id = env.register(ArenaContract, (&admin,));
+    let client = ArenaContractClient::new(&env, &contract_id);
     let hash = BytesN::from_array(&env, &[0u8; 32]);
     client.execute_upgrade(&hash);
 }
@@ -951,8 +946,8 @@ proptest! {
         let env = make_env();
         let client = create_client(&env);
 
-        client.init(&first_speed, &TEST_REQUIRED_STAKE);
-        let result = client.try_init(&second_speed, &TEST_REQUIRED_STAKE);
+        client.init(&first_speed, &TEST_REQUIRED_STAKE, &3600);
+        let result = client.try_init(&second_speed, &TEST_REQUIRED_STAKE, &3600);
 
         prop_assert_eq!(
             result,
@@ -1062,7 +1057,8 @@ fn test_set_admin_fails_without_admin() {
     // With constructor, admin is always set. This test uses direct storage injection
     // to simulate an uninitialized contract for edge-case coverage.
     let env = Env::default();
-    let contract_id = env.register(ArenaContract, ());
+    let admin = Address::generate(&env);
+    let contract_id = env.register(ArenaContract, (&admin,));
     let client = ArenaContractClient::new(&env, &contract_id);
     let new_admin = Address::generate(&env);
     client.set_admin(&new_admin);
@@ -1073,9 +1069,10 @@ fn test_set_admin_fails_without_admin() {
 fn test_unauthorized_propose_upgrade_panics() {
     let env = Env::default();
     let admin = Address::generate(&env);
-    let contract_id = env.register(ArenaContract, ());
+    let admin = Address::generate(&env);
+    let contract_id = env.register(ArenaContract, (&admin,));
     env.as_contract(&contract_id, || {
-        env.storage().instance().set(&DataKey::ContractAdmin, &admin);
+        env.storage().instance().set(&symbol_short!("ADMIN"), &admin);
     });
     let client = ArenaContractClient::new(&env, &contract_id);
     client.propose_upgrade(&dummy_hash(&env));
@@ -1088,7 +1085,7 @@ fn test_unauthorized_execute_upgrade_panics() {
     let admin = Address::generate(&env);
     let contract_id = env.register(ArenaContract, (&admin,));
     let client = ArenaContractClient::new(&env, &contract_id);
-    client.execute_upgrade();
+    client.execute_upgrade(&soroban_sdk::BytesN::from_array(&env, &[0; 32]));
 }
 
 #[test]
@@ -1096,9 +1093,10 @@ fn test_unauthorized_execute_upgrade_panics() {
 fn test_unauthorized_cancel_upgrade_panics() {
     let env = Env::default();
     let admin = Address::generate(&env);
-    let contract_id = env.register(ArenaContract, ());
+    let admin = Address::generate(&env);
+    let contract_id = env.register(ArenaContract, (&admin,));
     env.as_contract(&contract_id, || {
-        env.storage().instance().set(&DataKey::ContractAdmin, &admin);
+        env.storage().instance().set(&symbol_short!("ADMIN"), &admin);
     });
     let client = ArenaContractClient::new(&env, &contract_id);
     client.cancel_upgrade();
@@ -1168,7 +1166,7 @@ fn timeout_round_fails_when_no_active_round() {
     let client = create_client(&env);
 
     set_ledger_sequence(&env, 50);
-    client.init(&3, &TEST_REQUIRED_STAKE);
+    client.init(&3, &TEST_REQUIRED_STAKE, &3600);
     // do NOT call start_round
 
     set_ledger_sequence(&env, 200);
@@ -1377,7 +1375,7 @@ fn start_round_rejects_when_no_players_joined() {
     let (env, admin, client) = setup_with_admin();
     let (_asset, token_id) = setup_token(&env, &admin);
     client.set_token(&token_id);
-    client.init(&5, &TEST_REQUIRED_STAKE);
+    client.init(&5, &TEST_REQUIRED_STAKE, &3600);
 
     let err = client.try_start_round();
     assert_eq!(err, Err(Ok(ArenaError::NotEnoughPlayers)));
@@ -1567,7 +1565,7 @@ fn test_functions_fail_when_paused() {
     let (env, _admin, client) = setup_with_admin();
     let player = Address::generate(&env);
 
-    client.init(&10, &TEST_REQUIRED_STAKE);
+    client.init(&10, &TEST_REQUIRED_STAKE, &3600);
     client.pause();
     assert!(client.is_paused());
 
@@ -1691,7 +1689,7 @@ fn test_paused_blocks_game_functions_not_governance() {
     let player = Address::generate(&env);
     let hash = dummy_hash(&env);
 
-    client.init(&10u32, &TEST_REQUIRED_STAKE);
+    client.init(&10u32, &TEST_REQUIRED_STAKE, &3600);
     client.pause();
     assert!(client.is_paused());
 
@@ -1847,7 +1845,7 @@ fn get_arena_state_reflects_survivor_count() {
     let (_token, token_id) = setup_token(&env, &admin);
     let asset = StellarAssetClient::new(&env, &token_id);
     client.set_token(&token_id);
-    client.init(&5, &10_000_000i128);
+    client.init(&5, &10_000_000i128, &3600);
 
     env.mock_all_auths();
     let player_a = Address::generate(&env);
@@ -1927,7 +1925,7 @@ fn join_boundary_participants_n_minus_1_n_n_plus_1() {
     let asset = StellarAssetClient::new(&env, &token_id);
     asset.mint(&client.address, &50_000_000i128);
     client.set_token(&token_id);
-    client.init(&5, &TEST_REQUIRED_STAKE);
+    client.init(&5, &TEST_REQUIRED_STAKE, &3600);
 
     // Use admin capacity so the test stays fast while still exercising typed `ArenaFull`.
     const CAP: u32 = 50;
@@ -1958,7 +1956,7 @@ fn join_rejects_amounts_that_do_not_match_required_stake() {
     let (_token, token_id) = setup_token(&env, &admin);
     let asset = StellarAssetClient::new(&env, &token_id);
     client.set_token(&token_id);
-    client.init(&5, &TEST_REQUIRED_STAKE);
+    client.init(&5, &TEST_REQUIRED_STAKE, &3600);
 
     let player = Address::generate(&env);
     asset.mint(&player, &1_000_000i128);
@@ -1971,7 +1969,7 @@ fn join_rejects_amounts_that_do_not_match_required_stake() {
 fn init_rejects_stake_below_minimum() {
     let (_env, _admin, client) = setup_with_admin();
     // In test builds MIN_REQUIRED_STAKE = 1, so 0 is below the floor.
-    let err = client.try_init(&5, &0);
+    let err = client.try_init(&5, &0, &3600);
     assert_eq!(err, Err(Ok(ArenaError::InvalidAmount)));
 }
 
@@ -1979,7 +1977,7 @@ fn init_rejects_stake_below_minimum() {
 fn init_accepts_stake_at_minimum() {
     let (_env, _admin, client) = setup_with_admin();
     // In test builds MIN_REQUIRED_STAKE = 1.
-    client.init(&5, &bounds::MIN_REQUIRED_STAKE);
+    client.init(&5, &bounds::MIN_REQUIRED_STAKE, &3600);
 }
 
 #[test]
@@ -1990,7 +1988,7 @@ fn set_token_rejects_changes_after_first_join() {
     let old_asset = StellarAssetClient::new(&env, &old_token_id);
 
     client.set_token(&old_token_id);
-    client.init(&5, &TEST_REQUIRED_STAKE);
+    client.init(&5, &TEST_REQUIRED_STAKE, &3600);
 
     let player = Address::generate(&env);
     old_asset.mint(&player, &1_000_000i128);
@@ -2074,7 +2072,7 @@ fn set_winner_fails_for_non_survivor() {
     let (env, admin, client) = setup_with_admin();
     let (_asset, token_id) = setup_token(&env, &admin);
     client.set_token(&token_id);
-    client.init(&5, &TEST_REQUIRED_STAKE);
+    client.init(&5, &TEST_REQUIRED_STAKE, &3600);
     let non_survivor = Address::generate(&env);
 
     let err = client.try_set_winner(&non_survivor, &100i128, &0i128);
@@ -2086,7 +2084,7 @@ fn capacity_enforcement() {
     let (env, admin, client) = setup_with_admin();
     let (_asset, token_id) = setup_token(&env, &admin);
     client.set_token(&token_id);
-    client.init(&5, &TEST_REQUIRED_STAKE);
+    client.init(&5, &TEST_REQUIRED_STAKE, &3600);
 
     // Set capacity to 2
     client.set_capacity(&2);
@@ -2156,7 +2154,7 @@ fn start_round_rejects_after_game_is_finished() {
 #[test]
 fn join_fails_when_token_not_set() {
     let (env, _admin, client) = setup_with_admin();
-    client.init(&5, &TEST_REQUIRED_STAKE);
+    client.init(&5, &TEST_REQUIRED_STAKE, &3600);
     // No set_token call — token is unset.
     env.mock_all_auths();
 
@@ -2189,7 +2187,7 @@ fn join_succeeds_on_retry_after_capacity_was_cleared() {
 
     const CAP: u32 = 2;
     client.set_token(&token_id);
-    client.init(&5, &TEST_REQUIRED_STAKE);
+    client.init(&5, &TEST_REQUIRED_STAKE, &3600);
     client.set_capacity(&CAP);
 
     env.mock_all_auths();
@@ -2219,7 +2217,7 @@ fn join_fails_when_paused() {
     let (_token, token_id) = setup_token(&env, &admin);
     let asset = StellarAssetClient::new(&env, &token_id);
     client.set_token(&token_id);
-    client.init(&5, &TEST_REQUIRED_STAKE);
+    client.init(&5, &TEST_REQUIRED_STAKE, &3600);
 
     env.mock_all_auths();
     client.pause();
@@ -2262,7 +2260,7 @@ fn get_user_state_non_existent_player_returns_inactive() {
     env.mock_all_auths();
     let client = create_client(&env);
     set_ledger_sequence(&env, 800);
-    client.init(&5, &TEST_REQUIRED_STAKE);
+    client.init(&5, &TEST_REQUIRED_STAKE, &3600);
 
     let unknown = Address::generate(&env);
     let state = client.get_user_state(&unknown);
@@ -2276,7 +2274,7 @@ fn get_user_state_active_player_shows_active() {
     let (asset, token_id) = setup_token(&env, &admin);
     client.set_token(&token_id);
     set_ledger_sequence(&env, 800);
-    client.init(&5, &10i128);
+    client.init(&5, &10i128, &3600);
 
     let player = Address::generate(&env);
     asset.mint(&player, &100i128);
@@ -2293,7 +2291,7 @@ fn get_user_state_returns_consistent_for_multiple_players() {
     let (asset, token_id) = setup_token(&env, &admin);
     client.set_token(&token_id);
     set_ledger_sequence(&env, 800);
-    client.init(&5, &TEST_REQUIRED_STAKE);
+    client.init(&5, &TEST_REQUIRED_STAKE, &3600);
 
     let player_a = Address::generate(&env);
     let player_b = Address::generate(&env);
@@ -2939,7 +2937,7 @@ fn cancel_zero_players_sets_cancelled_flag() {
     let (env, admin, client) = setup_with_admin();
     let (_asset, token_id) = setup_token(&env, &admin);
     client.set_token(&token_id);
-    client.init(&5u32, &TEST_REQUIRED_STAKE);
+    client.init(&5u32, &TEST_REQUIRED_STAKE, &3600);
     client.cancel_arena();
     assert!(client.is_cancelled());
 }
@@ -3036,7 +3034,7 @@ fn set_max_rounds_rejects_zero() {
     let (env, admin, client) = setup_with_admin();
     let (_asset, token_id) = setup_token(&env, &admin);
     client.set_token(&token_id);
-    client.init(&5u32, &TEST_REQUIRED_STAKE);
+    client.init(&5u32, &TEST_REQUIRED_STAKE, &3600);
     assert_eq!(
         client.try_set_max_rounds(&0u32),
         Err(Ok(ArenaError::InvalidMaxRounds))
@@ -3048,7 +3046,7 @@ fn set_max_rounds_rejects_above_max() {
     let (env, admin, client) = setup_with_admin();
     let (_asset, token_id) = setup_token(&env, &admin);
     client.set_token(&token_id);
-    client.init(&5u32, &TEST_REQUIRED_STAKE);
+    client.init(&5u32, &TEST_REQUIRED_STAKE, &3600);
     assert_eq!(
         client.try_set_max_rounds(&(bounds::MAX_MAX_ROUNDS + 1)),
         Err(Ok(ArenaError::InvalidMaxRounds))
@@ -3060,7 +3058,7 @@ fn set_max_rounds_accepts_boundary_values() {
     let (env, admin, client) = setup_with_admin();
     let (_asset, token_id) = setup_token(&env, &admin);
     client.set_token(&token_id);
-    client.init(&5u32, &TEST_REQUIRED_STAKE);
+    client.init(&5u32, &TEST_REQUIRED_STAKE, &3600);
     assert!(client.try_set_max_rounds(&bounds::MIN_MAX_ROUNDS).is_ok());
     assert!(client.try_set_max_rounds(&bounds::MAX_MAX_ROUNDS).is_ok());
     assert!(client.try_set_max_rounds(&bounds::DEFAULT_MAX_ROUNDS).is_ok());

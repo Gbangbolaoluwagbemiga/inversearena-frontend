@@ -40,13 +40,11 @@ fn setup_arena(n: u32) -> (Env, ArenaContractClient<'static>, Address, std::vec:
     env.mock_all_auths();
     set_seq(&env, 100);
 
-    let contract_id = env.register(ArenaContract, ());
     let admin = Address::generate(&env);
+    let contract_id = env.register(ArenaContract, (&admin,));
 
     let env_s: &'static Env = unsafe { &*(&env as *const Env) };
     let client = ArenaContractClient::new(env_s, &contract_id);
-
-    client.initialize(&admin);
 
     let token_admin = Address::generate(&env);
     let token_id = env
@@ -55,7 +53,7 @@ fn setup_arena(n: u32) -> (Env, ArenaContractClient<'static>, Address, std::vec:
     let asset = StellarAssetClient::new(&env, &token_id);
 
     client.set_token(&token_id);
-    client.init(&ROUND_SPEED, &STAKE);
+    client.init(&ROUND_SPEED, &STAKE, &3600);
 
     let mut players = std::vec::Vec::new();
     for _ in 0..n {

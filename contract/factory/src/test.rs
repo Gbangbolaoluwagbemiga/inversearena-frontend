@@ -1,4 +1,5 @@
 #[cfg(test)]
+extern crate std;
 use super::*;
 use arena::ArenaContractClient;
 use soroban_sdk::{
@@ -60,7 +61,7 @@ fn test_double_initialize_returns_already_initialized() {
     // function — the constructor runs exactly once at deploy time.
     // This test verifies that the constructor correctly sets the admin.
     let (_env, admin, client) = setup();
-    assert_eq!(client.admin(), Ok(admin));
+    assert_eq!(client.admin(), admin);
 }
 
 // ── whitelist management ───────────────────────────────────────────────────────
@@ -678,10 +679,9 @@ fn timelock_cancel_before_execute_clears_pending_and_execute_panics() {
 #[should_panic(expected = "InvalidAction")]
 fn timelock_non_admin_propose_panics() {
     let env = Env::default();
-    let contract_id = env.register(FactoryContract, ());
-    let client = FactoryContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
-    client.initialize(&admin);
+    let contract_id = env.register(FactoryContract, (&admin,));
+    let client = FactoryContractClient::new(&env, &contract_id);
 
     let hash = BytesN::from_array(&env, &[0u8; 32]);
     client.propose_upgrade(&hash);
@@ -691,10 +691,9 @@ fn timelock_non_admin_propose_panics() {
 #[should_panic(expected = "InvalidAction")]
 fn timelock_non_admin_execute_panics() {
     let env = Env::default();
-    let contract_id = env.register(FactoryContract, ());
-    let client = FactoryContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
-    client.initialize(&admin);
+    let contract_id = env.register(FactoryContract, (&admin,));
+    let client = FactoryContractClient::new(&env, &contract_id);
 
     let hash = BytesN::from_array(&env, &[0u8; 32]);
     client.execute_upgrade(&hash);
@@ -884,7 +883,7 @@ fn test_unauthorized_execute_upgrade_panics() {
     let admin = Address::generate(&env);
     let contract_id = env.register(FactoryContract, (&admin,));
     let client = FactoryContractClient::new(&env, &contract_id);
-    client.execute_upgrade();
+    client.execute_upgrade(&soroban_sdk::BytesN::from_array(&env, &[0; 32]));
 }
 
 #[test]
@@ -1160,9 +1159,9 @@ fn initialize_with_wrong_signer_fails() {
         },
     }]);
     // Deploying/registering with wrong signer should fail with auth error.
-    let result = core::panic::catch_unwind(|| {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         env.register(FactoryContract, (&admin,));
-    });
+    }));
     // The constructor requires admin auth, so this should panic (auth failure).
     // In test environments, auth failures manifest as panics.
     let _ = (result, impersonator);
@@ -1173,7 +1172,7 @@ fn initialize_duplicate_call_returns_already_initialized() {
     // With constructor-based init, double initialization is structurally impossible.
     // Verify the constructor correctly set up the admin.
     let (_env, admin, client) = setup();
-    assert_eq!(client.admin(), Ok(admin));
+    assert_eq!(client.admin(), admin);
 }
 
 // ── Issue #506: Emergency pause (factory) ────────────────────────────────────
@@ -1330,7 +1329,7 @@ fn double_initialize_is_impossible_with_constructor() {
     let admin = Address::generate(&env);
     let contract_id = env.register(FactoryContract, (&admin,));
     let client = FactoryContractClient::new(&env, &contract_id);
-    assert_eq!(client.admin(), Ok(admin));
+    assert_eq!(client.admin(), admin);
 }
 
 // ── Issue #517: fee timelock tests ────────────────────────────────────────────

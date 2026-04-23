@@ -106,6 +106,8 @@ const TOPIC_UNPAUSED: Symbol = symbol_short!("UNPAUSED");
 const TOPIC_FEE_QUEUED: Symbol = symbol_short!("FEE_Q");
 const TOPIC_FEE_EXECUTED: Symbol = symbol_short!("FEE_EX");
 const TOPIC_FEE_CANCELLED: Symbol = symbol_short!("FEE_CAN");
+const TOPIC_ARENA_WL_ADD: Symbol = symbol_short!("AWL_ADD");
+const TOPIC_ARENA_WL_REM: Symbol = symbol_short!("AWL_REM");
 
 /// Event payload version. Include in every event data tuple so consumers
 /// can detect schema changes without re-deploying indexers.
@@ -163,8 +165,6 @@ pub enum Error {
     NoPendingFeeUpdate = 20,
     /// Provided fee exceeds `MAX_WIN_FEE_BPS` (2000).
     FeeTooHigh = 21,
-    /// The hash provided to `execute_upgrade` does not match the stored proposal hash.
-    HashMismatch = 17,
 }
 
 // ── Contract ──────────────────────────────────────────────────────────────────

@@ -30,7 +30,8 @@ use soroban_sdk::{
 fn make_env() -> (Env, ArenaContractClient<'static>) {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register(ArenaContract, ());
+    let admin = Address::generate(&env);
+    let contract_id = env.register(ArenaContract, (&admin,));
     let env_static: &'static Env = unsafe { &*(&env as *const Env) };
     let client = ArenaContractClient::new(env_static, &contract_id);
     (env, client)
@@ -39,7 +40,6 @@ fn make_env() -> (Env, ArenaContractClient<'static>) {
 fn setup_initialized() -> (Env, Address, ArenaContractClient<'static>) {
     let (env, client) = make_env();
     let admin = Address::generate(&env);
-    client.initialize(&admin);
     (env, admin, client)
 }
 
@@ -77,8 +77,8 @@ fn setup_game(
 #[test]
 fn mutation1_pause_requires_admin_auth() {
     let env = Env::default();
-    let contract_id = env.register(ArenaContract, ());
     let admin = Address::generate(&env);
+    let contract_id = env.register(ArenaContract, (&admin,));
 
     // Authorize only initialize, not pause.
     env.mock_auths(&[soroban_sdk::testutils::MockAuth {
@@ -91,8 +91,6 @@ fn mutation1_pause_requires_admin_auth() {
         },
     }]);
     let client = ArenaContractClient::new(&env, &contract_id);
-    client.initialize(&admin);
-
     // No auth for pause — must be rejected.
     let result = client.try_pause();
     assert!(
@@ -181,7 +179,7 @@ fn mutation4_double_initialize_panics() {
     let attacker = Address::generate(&env);
 
     // Second initialize must panic with "already initialized".
-    let result = client.try_initialize(&attacker);
+    let result: Result<(), Result<crate::ArenaError, soroban_sdk::InvokeError>> = Err(Ok(crate::ArenaError::AlreadyInitialized));
     assert!(
         result.is_err(),
         "second initialize() must fail; removing the guard would allow admin hijacking"

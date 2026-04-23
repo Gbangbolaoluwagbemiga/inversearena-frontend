@@ -7,7 +7,8 @@ use soroban_sdk::{Address, Env, token};
 fn setup_env() -> (Env, ArenaContractClient<'static>) {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register(ArenaContract, ());
+    let admin = Address::generate(&env);
+    let contract_id = env.register(ArenaContract, (&admin,));
     let env_static: &'static Env = unsafe { &*(&env as *const Env) };
     let client = ArenaContractClient::new(env_static, &contract_id);
     (env, client)
@@ -17,10 +18,8 @@ fn setup_env() -> (Env, ArenaContractClient<'static>) {
 fn test_initial_state_is_pending() {
     let (env, client) = setup_env();
     let admin = Address::generate(&env);
-    client.initialize(&admin);
     let deadline = env.ledger().timestamp() + 7200;
-    client.init(&5, &100, &deadline);
-    client.init(&5, &100);
+    client.init(&2, &100, &deadline);
     assert_eq!(client.state(), ArenaState::Pending);
 }
 
@@ -28,12 +27,11 @@ fn test_initial_state_is_pending() {
 fn test_transition_pending_to_active() {
     let (env, client) = setup_env();
     let admin = Address::generate(&env);
-    client.initialize(&admin);
     let token_admin = Address::generate(&env);
     let token_id = env.register_stellar_asset_contract_v2(token_admin).address();
     client.set_token(&token_id);
     let deadline = env.ledger().timestamp() + 7200;
-    client.init(&5, &100, &deadline);
+    client.init(&2, &100, &deadline);
 
     let p1 = Address::generate(&env);
     let p2 = Address::generate(&env);
@@ -53,13 +51,11 @@ fn test_transition_pending_to_active() {
 fn test_cannot_join_after_active() {
     let (env, client) = setup_env();
     let admin = Address::generate(&env);
-    client.initialize(&admin);
     let token_admin = Address::generate(&env);
     let token_id = env.register_stellar_asset_contract_v2(token_admin).address();
     client.set_token(&token_id);
     let deadline = env.ledger().timestamp() + 7200;
-    client.init(&5, &100, &deadline);
-    client.init(&5, &100);
+    client.init(&2, &100, &deadline);
 
     let p1 = Address::generate(&env);
     let p2 = Address::generate(&env);
@@ -81,12 +77,11 @@ fn test_cannot_join_after_active() {
 fn test_transition_active_to_completed() {
     let (env, client) = setup_env();
     let admin = Address::generate(&env);
-    client.initialize(&admin);
     let token_admin = Address::generate(&env);
     let token_id = env.register_stellar_asset_contract_v2(token_admin).address();
     client.set_token(&token_id);
     let deadline = env.ledger().timestamp() + 7200;
-    client.init(&5, &100, &deadline);
+    client.init(&2, &100, &deadline);
 
     let p1 = Address::generate(&env);
     let p2 = Address::generate(&env);
@@ -113,9 +108,8 @@ fn test_transition_active_to_completed() {
 fn test_transition_pending_to_cancelled() {
     let (env, client) = setup_env();
     let admin = Address::generate(&env);
-    client.initialize(&admin);
     let deadline = env.ledger().timestamp() + 7200;
-    client.init(&5, &100, &deadline);
+    client.init(&2, &100, &deadline);
 
     client.cancel_arena();
     assert_eq!(client.state(), ArenaState::Cancelled);
@@ -126,12 +120,11 @@ fn test_transition_pending_to_cancelled() {
 fn test_cannot_start_after_completed() {
     let (env, client) = setup_env();
     let admin = Address::generate(&env);
-    client.initialize(&admin);
     let token_admin = Address::generate(&env);
     let token_id = env.register_stellar_asset_contract_v2(token_admin).address();
     client.set_token(&token_id);
     let deadline = env.ledger().timestamp() + 7200;
-    client.init(&5, &100, &deadline);
+    client.init(&2, &100, &deadline);
 
     let p1 = Address::generate(&env);
     let p2 = Address::generate(&env);

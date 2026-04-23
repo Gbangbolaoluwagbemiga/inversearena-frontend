@@ -6,19 +6,43 @@ use soroban_sdk::{
     token::{StellarAssetClient, TokenClient},
 };
 
+
+#[contract]
+pub struct MockFactoryContract;
+#[contractimpl]
+impl MockFactoryContract {
+    pub fn set_arena(env: Env, arena_id: u64, contract: Address) {
+        let r = ArenaRef {
+            contract,
+            status: ArenaStatus::Active,
+            host: Address::generate(&env),
+        };
+        env.storage().instance().set(&arena_id, &r);
+    }
+    pub fn get_arena_ref(env: Env, arena_id: u64) -> ArenaRef {
+        env.storage().instance().get(&arena_id).unwrap()
+    }
+}
+
 const TIMELOCK: u64 = 48 * 60 * 60;
 
-fn setup() -> (Env, Address, PayoutContractClient<'static>) {
+
+
+fn setup() -> (Env, Address, PayoutContractClient<'static>, Address, MockFactoryContractClient<'static>) {
     let env = Env::default();
     env.mock_all_auths();
 
     let admin = Address::generate(&env);
     let contract_id = env.register(PayoutContract, (&admin,));
 
+    let factory_id = env.register(MockFactoryContract, ());
     let env_static: &'static Env = unsafe { &*(&env as *const Env) };
     let client = PayoutContractClient::new(env_static, &contract_id);
+    let factory_client = MockFactoryContractClient::new(env_static, &factory_id);
 
-    (env, admin, client)
+    client.init_factory(&factory_id);
+
+    (env, admin, client, factory_id, factory_client)
 }
 
 fn setup_with_token() -> (
@@ -27,8 +51,10 @@ fn setup_with_token() -> (
     PayoutContractClient<'static>,
     Address,
     Address,
+    Address,
+    MockFactoryContractClient<'static>
 ) {
-    let (env, admin, client) = setup();
+    let (env, admin, client, factory_id, factory_client) = setup();
 
     let treasury = Address::generate(&env);
     client.set_treasury(&treasury);
@@ -40,12 +66,12 @@ fn setup_with_token() -> (
     let asset = StellarAssetClient::new(&env, &token_id);
     asset.mint(&client.address, &10_000i128);
 
-    (env, admin, client, token_id, treasury)
+    (env, admin, client, token_id, treasury, factory_id, factory_client)
 }
 
 #[test]
 fn test_initialize_sets_admin() {
-    let (_env, admin, client) = setup();
+    let (_env, admin, client, _, _factory_client) = setup();
     assert_eq!(client.admin(), admin);
 }
 
@@ -53,14 +79,14 @@ fn test_initialize_sets_admin() {
 fn test_double_initialize_panics() {
     // With __constructor, double initialization is structurally impossible.
     // The constructor runs exactly once at deploy time.
-    let (_env, admin, client) = setup();
+    let (_env, admin, client, _, _factory_client) = setup();
     assert_eq!(client.admin(), admin);
     // No separate initialize() to call; the constructor is the only init path.
 }
 
 #[test]
 fn test_admin_can_distribute_winnings() {
-    let (env, _admin, client) = setup();
+    let (env, _admin, client, _, factory_client) = setup();
 
     let winner = Address::generate(&env);
     let ctx = symbol_short!("ARENA_1");
@@ -70,7 +96,11 @@ fn test_admin_can_distribute_winnings() {
     let currency = symbol_short!("XLM");
 
     assert!(!client.is_payout_processed(&ctx, &pool_id, &round_id, &winner));
-    client.distribute_winnings(&ctx, &pool_id, &round_id, &winner, &amount, &currency);
+    {
+        let caller = Address::generate(&env);
+        factory_client.set_arena(&(pool_id as u64), &caller);
+        client.distribute_winnings(&caller, &ctx, &pool_id, &round_id, &winner, &amount, &currency)
+    };
     assert!(client.is_payout_processed(&ctx, &pool_id, &round_id, &winner));
 
     let payout = client
@@ -92,14 +122,22 @@ fn test_unauthorized_caller_cannot_distribute() {
     let contract_id = env.register(PayoutContract, (&admin,));
     let client = PayoutContractClient::new(&env, &contract_id);
 
-    // Clear all mocked auths — now admin.require_auth() is unsatisfied.
-    env.mock_auths(&[]);
-
     let winner = Address::generate(&env);
     let ctx = symbol_short!("ARENA_1");
     let currency = symbol_short!("XLM");
 
-    let result = client.try_distribute_winnings(&ctx, &1u32, &1u32, &winner, &1000i128, &currency);
+    let result = {
+        let caller = Address::generate(&env);
+        // factory_client is not defined here, so we instantiate it
+        let factory_client = MockFactoryContractClient::new(&env, &env.register(MockFactoryContract, ()));
+        client.init_factory(&factory_client.address);
+        
+        // Clear all mocked auths BEFORE trying to distribute, but AFTER init_factory which needs admin auth
+        env.mock_auths(&[]);
+        
+        factory_client.set_arena(&(1u32 as u64), &caller);
+        client.try_distribute_winnings(&caller, &ctx, &1u32, &1u32, &winner, &1000i128, &currency)
+    };
     assert!(
         result.is_err(),
         "non-admin signer must be rejected by admin.require_auth()"
@@ -108,48 +146,72 @@ fn test_unauthorized_caller_cannot_distribute() {
 
 #[test]
 fn test_zero_amount_returns_error() {
-    let (env, _admin, client) = setup();
+    let (env, _admin, client, _, factory_client) = setup();
     let winner = Address::generate(&env);
     let ctx = symbol_short!("ARENA_1");
     let currency = symbol_short!("XLM");
 
-    let result = client.try_distribute_winnings(&ctx, &1u32, &1u32, &winner, &0i128, &currency);
+    let result = {
+        let caller = Address::generate(&env);
+        factory_client.set_arena(&(1u32 as u64), &caller);
+        client.try_distribute_winnings(&caller, &ctx, &1u32, &1u32, &winner, &0i128, &currency)
+    };
     assert_eq!(result, Err(Ok(PayoutError::InvalidAmount)));
 }
 
 #[test]
 fn test_negative_amount_returns_error() {
-    let (env, _admin, client) = setup();
+    let (env, _admin, client, _, factory_client) = setup();
     let winner = Address::generate(&env);
     let ctx = symbol_short!("ARENA_1");
     let currency = symbol_short!("XLM");
 
-    let result = client.try_distribute_winnings(&ctx, &1u32, &1u32, &winner, &-1i128, &currency);
+    let result = {
+        let caller = Address::generate(&env);
+        factory_client.set_arena(&(1u32 as u64), &caller);
+        client.try_distribute_winnings(&caller, &ctx, &1u32, &1u32, &winner, &-1i128, &currency)
+    };
     assert_eq!(result, Err(Ok(PayoutError::InvalidAmount)));
 }
 
 #[test]
 fn test_idempotency_prevents_double_pay_same_key() {
-    let (env, _admin, client) = setup();
+    let (env, _admin, client, _, factory_client) = setup();
     let winner = Address::generate(&env);
     let ctx = symbol_short!("ARENA_1");
     let currency = symbol_short!("XLM");
 
-    client.distribute_winnings(&ctx, &7u32, &2u32, &winner, &1000i128, &currency);
+    {
+        let caller = Address::generate(&env);
+        factory_client.set_arena(&(7u32 as u64), &caller);
+        client.distribute_winnings(&caller, &ctx, &7u32, &2u32, &winner, &1000i128, &currency)
+    };
 
-    let second = client.try_distribute_winnings(&ctx, &7u32, &2u32, &winner, &9999i128, &currency);
+    let second = {
+        let caller = Address::generate(&env);
+        factory_client.set_arena(&(7u32 as u64), &caller);
+        client.try_distribute_winnings(&caller, &ctx, &7u32, &2u32, &winner, &9999i128, &currency)
+    };
     assert_eq!(second, Err(Ok(PayoutError::AlreadyPaid)));
 }
 
 #[test]
 fn test_different_round_ids_allow_multiple_payouts() {
-    let (env, _admin, client) = setup();
+    let (env, _admin, client, _, factory_client) = setup();
     let winner = Address::generate(&env);
     let ctx = symbol_short!("ARENA_1");
     let currency = symbol_short!("USDC");
 
-    client.distribute_winnings(&ctx, &1u32, &1u32, &winner, &1000i128, &currency);
-    client.distribute_winnings(&ctx, &1u32, &2u32, &winner, &2000i128, &currency);
+    {
+        let caller = Address::generate(&env);
+        factory_client.set_arena(&(1u32 as u64), &caller);
+        client.distribute_winnings(&caller, &ctx, &1u32, &1u32, &winner, &1000i128, &currency)
+    };
+    {
+        let caller = Address::generate(&env);
+        factory_client.set_arena(&(1u32 as u64), &caller);
+        client.distribute_winnings(&caller, &ctx, &1u32, &2u32, &winner, &2000i128, &currency)
+    };
 
     assert!(client.is_payout_processed(&ctx, &1u32, &1u32, &winner));
     assert!(client.is_payout_processed(&ctx, &1u32, &2u32, &winner));
@@ -157,7 +219,7 @@ fn test_different_round_ids_allow_multiple_payouts() {
 
 #[test]
 fn test_get_payout_returns_none_for_unprocessed() {
-    let (env, _admin, client) = setup();
+    let (env, _admin, client, _, factory_client) = setup();
     let winner = Address::generate(&env);
     let ctx = symbol_short!("ARENA_1");
 
@@ -166,13 +228,17 @@ fn test_get_payout_returns_none_for_unprocessed() {
 
 #[test]
 fn test_set_currency_token_enables_token_transfer() {
-    let (env, _admin, client, token_id, _treasury) = setup_with_token();
+    let (env, _admin, client, token_id, _treasury, _, factory_client) = setup_with_token();
     let winner = Address::generate(&env);
     let ctx = symbol_short!("ARENA_1");
     let currency = symbol_short!("USDC");
 
     client.set_currency_token(&currency, &token_id);
-    client.distribute_winnings(&ctx, &3u32, &1u32, &winner, &750i128, &currency);
+    {
+        let caller = Address::generate(&env);
+        factory_client.set_arena(&(3u32 as u64), &caller);
+        client.distribute_winnings(&caller, &ctx, &3u32, &1u32, &winner, &750i128, &currency)
+    };
 
     let token = TokenClient::new(&env, &token_id);
     assert_eq!(token.balance(&winner), 750i128);
@@ -180,7 +246,7 @@ fn test_set_currency_token_enables_token_transfer() {
 
 #[test]
 fn test_distribute_prize_transfers_tokens_to_winners() {
-    let (env, _admin, client, token_id, _treasury) = setup_with_token();
+    let (env, _admin, client, token_id, _treasury, _, factory_client) = setup_with_token();
     let winner1 = Address::generate(&env);
     let winner2 = Address::generate(&env);
     let mut winners = Vec::new(&env);
@@ -196,7 +262,7 @@ fn test_distribute_prize_transfers_tokens_to_winners() {
 
 #[test]
 fn test_distribute_prize_sends_dust_to_treasury() {
-    let (env, _admin, client, token_id, treasury) = setup_with_token();
+    let (env, _admin, client, token_id, treasury, _, factory_client) = setup_with_token();
     let winner1 = Address::generate(&env);
     let winner2 = Address::generate(&env);
     let winner3 = Address::generate(&env);
@@ -216,7 +282,7 @@ fn test_distribute_prize_sends_dust_to_treasury() {
 
 #[test]
 fn test_distribute_prize_idempotency_prevents_double_payout() {
-    let (env, _admin, client, token_id, _treasury) = setup_with_token();
+    let (env, _admin, client, token_id, _treasury, _, factory_client) = setup_with_token();
     let winner = Address::generate(&env);
     let mut winners = Vec::new(&env);
     winners.push_back(winner.clone());
@@ -230,7 +296,7 @@ fn test_distribute_prize_idempotency_prevents_double_payout() {
 
 #[test]
 fn test_distribute_prize_no_winners_returns_error() {
-    let (env, _admin, client, token_id, _treasury) = setup_with_token();
+    let (env, _admin, client, token_id, _treasury, _, factory_client) = setup_with_token();
     let empty: Vec<Address> = Vec::new(&env);
 
     let result = client.try_distribute_prize(&4u32, &1000i128, &empty, &token_id);
@@ -239,7 +305,7 @@ fn test_distribute_prize_no_winners_returns_error() {
 
 #[test]
 fn test_distribute_prize_invalid_amount_returns_error() {
-    let (env, _admin, client, token_id, _treasury) = setup_with_token();
+    let (env, _admin, client, token_id, _treasury, _, factory_client) = setup_with_token();
     let winner = Address::generate(&env);
     let mut winners = Vec::new(&env);
     winners.push_back(winner);
@@ -326,7 +392,7 @@ fn test_distribute_split_payout_single_winner_gets_full_amount() {
 fn payout_record_survives_ttl_threshold() {
     use soroban_sdk::testutils::Ledger;
 
-    let (env, _admin, client) = setup();
+    let (env, _admin, client, _, factory_client) = setup();
     let winner = Address::generate(&env);
     let ctx = symbol_short!("arena_1");
     let pool_id = 1u32;
@@ -334,7 +400,11 @@ fn payout_record_survives_ttl_threshold() {
     let amount = 500i128;
     let currency = symbol_short!("XLM");
 
-    client.distribute_winnings(&ctx, &pool_id, &round_id, &winner, &amount, &currency);
+    {
+        let caller = Address::generate(&env);
+        factory_client.set_arena(&(pool_id as u64), &caller);
+        client.distribute_winnings(&caller, &ctx, &pool_id, &round_id, &winner, &amount, &currency)
+    };
 
     // Advance ledger past PAYOUT_TTL_THRESHOLD (100_000) — record must still exist.
     env.ledger().with_mut(|l| {
@@ -368,7 +438,7 @@ fn initialize_with_wrong_signer_fails() {
 
 #[test]
 fn admin_can_pause_and_unpause_payout() {
-    let (_env, _admin, client) = setup();
+    let (_env, _admin, client, _, _factory_client) = setup();
     assert!(!client.is_paused());
     client.pause();
     assert!(client.is_paused());
@@ -378,18 +448,22 @@ fn admin_can_pause_and_unpause_payout() {
 
 #[test]
 fn pause_blocks_distribute_winnings() {
-    let (env, _admin, client) = setup();
+    let (env, _admin, client, _, factory_client) = setup();
     client.pause();
     let winner = Address::generate(&env);
     let ctx = symbol_short!("CTX");
     let currency = symbol_short!("XLM");
-    let result = client.try_distribute_winnings(&ctx, &1u32, &1u32, &winner, &100i128, &currency);
+    let result = {
+        let caller = Address::generate(&env);
+        factory_client.set_arena(&(1u32 as u64), &caller);
+        client.try_distribute_winnings(&caller, &ctx, &1u32, &1u32, &winner, &100i128, &currency)
+    };
     assert_eq!(result, Err(Ok(PayoutError::Paused)));
 }
 
 #[test]
 fn pause_blocks_distribute_prize() {
-    let (env, _admin, client, token_id, _treasury) = setup_with_token();
+    let (env, _admin, client, token_id, _treasury, _, factory_client) = setup_with_token();
     client.pause();
     let winners = Vec::from_array(&env, [Address::generate(&env)]);
     let result = client.try_distribute_prize(&1u32, &100i128, &winners, &token_id);
@@ -398,7 +472,7 @@ fn pause_blocks_distribute_prize() {
 
 #[test]
 fn unpause_restores_distribute_winnings() {
-    let (env, _admin, client) = setup();
+    let (env, _admin, client, _, factory_client) = setup();
     client.pause();
     client.unpause();
     assert!(!client.is_paused());
@@ -406,13 +480,17 @@ fn unpause_restores_distribute_winnings() {
     let ctx = symbol_short!("CTX");
     let currency = symbol_short!("XLM");
     // distribute_winnings requires no actual token transfer, it just records
-    let result = client.try_distribute_winnings(&ctx, &1u32, &1u32, &winner, &100i128, &currency);
+    let result = {
+        let caller = Address::generate(&env);
+        factory_client.set_arena(&(1u32 as u64), &caller);
+        client.try_distribute_winnings(&caller, &ctx, &1u32, &1u32, &winner, &100i128, &currency)
+    };
     assert!(result.is_ok(), "should succeed after unpause");
 }
 
 #[test]
 fn read_functions_unaffected_by_payout_pause() {
-    let (_env, admin, client) = setup();
+    let (_env, admin, client, _, _factory_client) = setup();
     client.pause();
     assert_eq!(client.admin(), admin);
     assert!(client.is_paused());
@@ -420,7 +498,7 @@ fn read_functions_unaffected_by_payout_pause() {
 
 #[test]
 fn payout_history_empty_page() {
-    let (_env, _admin, client) = setup();
+    let (_env, _admin, client, _, _factory_client) = setup();
     let page = client.get_payout_history(&None, &10u32);
 
     assert!(page.items.is_empty());
@@ -430,12 +508,16 @@ fn payout_history_empty_page() {
 
 #[test]
 fn payout_history_records_single_payout_and_arena_lookup() {
-    let (env, _admin, client) = setup();
+    let (env, _admin, client, _, factory_client) = setup();
     let winner = Address::generate(&env);
     let ctx = symbol_short!("ARENA_1");
     let currency = symbol_short!("XLM");
 
-    client.distribute_winnings(&ctx, &7u32, &1u32, &winner, &1234i128, &currency);
+    {
+        let caller = Address::generate(&env);
+        factory_client.set_arena(&(7u32 as u64), &caller);
+        client.distribute_winnings(&caller, &ctx, &7u32, &1u32, &winner, &1234i128, &currency)
+    };
 
     let page = client.get_payout_history(&None, &10u32);
     assert_eq!(page.items.len(), 1);
@@ -450,12 +532,15 @@ fn payout_history_records_single_payout_and_arena_lookup() {
 
 #[test]
 fn payout_history_paginates_and_caps_limit() {
-    let (env, _admin, client) = setup();
+    let (env, _admin, client, _, factory_client) = setup();
     let ctx = symbol_short!("ARENA_1");
     let currency = symbol_short!("XLM");
 
     for i in 0..105u32 {
+        let caller = Address::generate(&env);
+        factory_client.set_arena(&(i as u64), &caller);
         client.distribute_winnings(
+            &caller,
             &ctx,
             &i,
             &1u32,
@@ -482,7 +567,7 @@ fn payout_history_paginates_and_caps_limit() {
 fn timelock_propose_stores_hash_and_executable_after_and_emits_event() {
     use soroban_sdk::testutils::Ledger as _;
 
-    let (env, _admin, client) = setup();
+    let (env, _admin, client, _, factory_client) = setup();
     let hash = BytesN::from_array(&env, &[0u8; 32]);
 
     client.propose_upgrade(&hash);
@@ -499,7 +584,7 @@ fn timelock_propose_stores_hash_and_executable_after_and_emits_event() {
 fn timelock_execute_before_delay_returns_timelock_not_expired() {
     use soroban_sdk::testutils::Ledger;
 
-    let (env, _admin, client) = setup();
+    let (env, _admin, client, _, factory_client) = setup();
     let hash = BytesN::from_array(&env, &[0u8; 32]);
     client.propose_upgrade(&hash);
     env.ledger().with_mut(|l| {
@@ -515,7 +600,7 @@ fn timelock_execute_before_delay_returns_timelock_not_expired() {
 fn timelock_execute_exactly_at_boundary_passes_timelock_check() {
     use soroban_sdk::testutils::Ledger;
 
-    let (env, _admin, client) = setup();
+    let (env, _admin, client, _, factory_client) = setup();
     let hash = BytesN::from_array(&env, &[0u8; 32]);
     let propose_time = env.ledger().timestamp();
     client.propose_upgrade(&hash);
@@ -534,7 +619,7 @@ fn timelock_execute_exactly_at_boundary_passes_timelock_check() {
 fn timelock_execute_after_delay_passes_timelock_check() {
     use soroban_sdk::testutils::Ledger;
 
-    let (env, _admin, client) = setup();
+    let (env, _admin, client, _, factory_client) = setup();
     let hash = BytesN::from_array(&env, &[0u8; 32]);
     let propose_time = env.ledger().timestamp();
     client.propose_upgrade(&hash);
@@ -553,7 +638,7 @@ fn timelock_execute_after_delay_passes_timelock_check() {
 fn timelock_cancel_before_execute_clears_pending_and_execute_panics() {
     use soroban_sdk::testutils::Ledger;
 
-    let (env, _admin, client) = setup();
+    let (env, _admin, client, _, factory_client) = setup();
     let hash = BytesN::from_array(&env, &[0u8; 32]);
     client.propose_upgrade(&hash);
     client.cancel_upgrade();
@@ -572,11 +657,10 @@ fn timelock_cancel_before_execute_clears_pending_and_execute_panics() {
 #[test]
 fn timelock_non_admin_propose_panics() {
     let env = Env::default();
-    let contract_id = env.register(PayoutContract, ());
-    let admin = Address::generate(&env);
     env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let contract_id = env.register(PayoutContract, (&admin,));
     let c = PayoutContractClient::new(&env, &contract_id);
-    c.initialize(&admin);
     // Explicitly clear all mocks so admin.require_auth() is no longer satisfied.
     env.mock_auths(&[]);
     let hash = BytesN::from_array(&env, &[0u8; 32]);
@@ -587,11 +671,10 @@ fn timelock_non_admin_propose_panics() {
 #[test]
 fn timelock_non_admin_execute_panics() {
     let env = Env::default();
-    let contract_id = env.register(PayoutContract, ());
-    let admin = Address::generate(&env);
     env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let contract_id = env.register(PayoutContract, (&admin,));
     let c = PayoutContractClient::new(&env, &contract_id);
-    c.initialize(&admin);
     // Explicitly clear all mocks so admin.require_auth() is no longer satisfied.
     env.mock_auths(&[]);
     let hash = BytesN::from_array(&env, &[0u8; 32]);
@@ -601,7 +684,7 @@ fn timelock_non_admin_execute_panics() {
 
 #[test]
 fn timelock_double_propose_returns_upgrade_already_pending() {
-    let (env, _admin, client) = setup();
+    let (env, _admin, client, _, factory_client) = setup();
     let hash1 = BytesN::from_array(&env, &[1u8; 32]);
     let hash2 = BytesN::from_array(&env, &[2u8; 32]);
 
@@ -617,7 +700,7 @@ fn timelock_double_propose_returns_upgrade_already_pending() {
 fn timelock_execute_with_wrong_hash_returns_hash_mismatch() {
     use soroban_sdk::testutils::Ledger;
 
-    let (env, _admin, client) = setup();
+    let (env, _admin, client, _, factory_client) = setup();
     let stored_hash = BytesN::from_array(&env, &[0u8; 32]);
     let wrong_hash = BytesN::from_array(&env, &[0xFFu8; 32]);
 
@@ -631,4 +714,28 @@ fn timelock_execute_with_wrong_hash_returns_hash_mismatch() {
         client.try_execute_upgrade(&wrong_hash),
         Err(Ok(PayoutError::HashMismatch))
     );
+}
+
+
+#[test]
+fn test_unauthorized_caller_attack_scenario() {
+    let (env, _admin, client, _, factory_client) = setup();
+    let attacker = Address::generate(&env);
+    let ctx = symbol_short!("ATTACK");
+    let pool_id = 1u32;
+    
+    let valid_arena = Address::generate(&env);
+    factory_client.set_arena(&(pool_id as u64), &valid_arena);
+    
+    let result = client.try_distribute_winnings(
+        &attacker,
+        &ctx,
+        &pool_id,
+        &1u32,
+        &attacker,
+        &1000i128,
+        &symbol_short!("XLM"),
+    );
+    
+    assert_eq!(result, Err(Ok(PayoutError::UnauthorizedCaller)));
 }

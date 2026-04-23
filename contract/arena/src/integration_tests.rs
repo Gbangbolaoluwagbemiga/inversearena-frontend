@@ -57,9 +57,6 @@ fn deploy_all(
     let factory = FactoryContractClient::new(env_s, &factory_id);
     let payout = PayoutContractClient::new(env_s, &payout_id);
 
-    factory.initialize(admin);
-    payout.initialize(admin);
-
     (factory, payout)
 }
 
@@ -71,11 +68,10 @@ fn deploy_arena(
     token: &Address,
 ) -> ArenaContractClient<'static> {
     let env_s: &'static Env = unsafe { &*(env as *const Env) };
-    let arena_id = env.register(ArenaContract, ());
+    let arena_id = env.register(ArenaContract, (&admin,));
     let arena = ArenaContractClient::new(env_s, &arena_id);
 
     arena.init(&round_speed, &required_stake);
-    arena.initialize(admin);
     arena.set_token(token);
 
     arena

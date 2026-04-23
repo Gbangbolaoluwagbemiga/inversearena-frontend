@@ -23,13 +23,11 @@ fn setup() -> (Env, ArenaContractClient<'static>, Address) {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register(ArenaContract, ());
     let admin = Address::generate(&env);
+    let contract_id = env.register(ArenaContract, (&admin,));
 
     let env_s: &'static Env = unsafe { &*(&env as *const Env) };
     let client = ArenaContractClient::new(env_s, &contract_id);
-
-    client.initialize(&admin);
 
     (env, client, admin)
 }

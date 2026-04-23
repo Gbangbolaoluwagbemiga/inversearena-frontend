@@ -1,0 +1,79 @@
+warning: use of deprecated method `soroban_sdk::deploy::DeployerWithAddress::deploy`: use deploy_v2
+   --> factory/src/lib.rs:376:72
+    |
+376 |         let arena_address = env.deployer().with_current_contract(salt).deploy(wasm_hash);
+    |                                                                        ^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: constant `MIN_SPEED_LEDGERS` is never used
+  --> arena/src/bounds.rs:29:11
+   |
+29 | pub const MIN_SPEED_LEDGERS: u32 = 10;
+   |           ^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `factory` (lib) generated 1 warning
+warning: `arena` (lib) generated 1 warning
+   Compiling arena v0.1.0 (/Users/gabrieltemtsen/Desktop/DRIPS/inversearena-frontend/contract/arena)
+warning: unused import: `soroban_sdk::testutils::Events as _`
+    --> arena/src/test.rs:2083:9
+     |
+2083 |     use soroban_sdk::testutils::Events as _;
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+error[E0308]: mismatched types
+    --> arena/src/test.rs:2341:9
+     |
+2341 |     let (topics, _data) = last;
+     |         ^^^^^^^^^^^^^^^   ---- this expression has type `(soroban_sdk::Address, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val)`
+     |         |
+     |         expected a tuple with 3 elements, found one with 2 elements
+     |
+     = note: expected tuple `(soroban_sdk::Address, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val)`
+                found tuple `(_, _)`
+
+error[E0277]: the trait bound `soroban_sdk::Val: From<soroban_sdk::Symbol>` is not satisfied
+    --> arena/src/test.rs:2345:9
+     |
+2345 |         soroban_sdk::Val::from(topic_sym),
+     |         ^^^^^^^^^^^^^^^^ the trait `From<soroban_sdk::Symbol>` is not implemented for `soroban_sdk::Val`
+     |
+     = help: the following other types implement trait `From<T>`:
+               `soroban_sdk::Val` implements `From<&()>`
+               `soroban_sdk::Val` implements `From<&MapObject>`
+               `soroban_sdk::Val` implements `From<&VecObject>`
+               `soroban_sdk::Val` implements `From<&i32>`
+               `soroban_sdk::Val` implements `From<&soroban_env_common::bytes::BytesObject>`
+               `soroban_sdk::Val` implements `From<&soroban_env_common::num::DurationObject>`
+               `soroban_sdk::Val` implements `From<&soroban_env_common::num::DurationSmall>`
+               `soroban_sdk::Val` implements `From<&soroban_env_common::num::DurationVal>`
+             and 84 others
+
+warning: unused variable: `env`
+    --> arena/src/test.rs:2141:10
+     |
+2141 |     let (env, _admin, client, _token_id, players) = setup_game(5, 2);
+     |          ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `env`
+    --> arena/src/test.rs:2160:10
+     |
+2160 |     let (env, _admin, client, _token_id, players) = setup_game(5, 2);
+     |          ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+    --> arena/src/test.rs:2171:10
+     |
+2171 |     let (env, _admin, client, _token_id, players) = setup_game(5, 2);
+     |          ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+Some errors have detailed explanations: E0277, E0308.
+For more information about an error, try `rustc --explain E0277`.
+warning: `arena` (lib test) generated 4 warnings
+error: could not compile `arena` (lib test) due to 2 previous errors; 4 warnings emitted

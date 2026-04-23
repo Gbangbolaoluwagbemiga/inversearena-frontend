@@ -1,7 +1,7 @@
 #![no_std]
 
 use soroban_sdk::{
-    Address, BytesN, Env, Symbol, Vec, contract, contracterror, contractimpl, contracttype,
+    Address, BytesN, Env, IntoVal, Symbol, Vec, contract, contracterror, contractimpl, contracttype,
     panic_with_error, symbol_short, token,
 };
 
@@ -19,6 +19,8 @@ const TOPIC_UPGRADE_PROPOSED: Symbol = symbol_short!("UP_PROP");
 const TOPIC_UPGRADE_EXECUTED: Symbol = symbol_short!("UP_EXEC");
 const TOPIC_UPGRADE_CANCELLED: Symbol = symbol_short!("UP_CANC");
 
+const FACTORY_KEY: Symbol = symbol_short!("FACTORY");
+
 const TIMELOCK_PERIOD: u64 = 48 * 60 * 60;
 const EVENT_VERSION: u32 = 1;
 
@@ -27,6 +29,23 @@ const PAYOUT_TTL_THRESHOLD: u32 = 100_000;
 const PAYOUT_TTL_EXTEND_TO: u32 = 535_680;
 const INSTANCE_TTL_THRESHOLD: u32 = 100_000;
 const INSTANCE_TTL_EXTEND_TO: u32 = 535_680;
+
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ArenaStatus {
+    Pending,
+    Active,
+    Completed,
+    Cancelled,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct ArenaRef {
+    pub contract: Address,
+    pub status: ArenaStatus,
+    pub host: Address,
+}
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -106,14 +125,11 @@ impl PayoutContract {
         env.storage().instance().set(&ADMIN_KEY, &admin);
     }
 
-    pub fn init_factory(env: Env, factory: Address, admin: Address) {
-        if env.storage().instance().has(&ADMIN_KEY) {
-            panic!("already initialized");
-        }
+    pub fn init_factory(env: Env, factory: Address) {
+        let admin = Self::admin(env.clone());
+        admin.require_auth();
 
-        factory.require_auth();
-
-        env.storage().instance().set(&ADMIN_KEY, &admin);
+        env.storage().instance().set(&FACTORY_KEY, &factory);
     }
 
     pub fn admin(env: Env) -> Address {
@@ -169,6 +185,7 @@ impl PayoutContract {
     /// * `AlreadyPaid`        — the composite key was already processed.
     pub fn distribute_winnings(
         env: Env,
+        caller: Address,
         ctx: Symbol,
         pool_id: u32,
         round_id: u32,
@@ -176,13 +193,24 @@ impl PayoutContract {
         amount: i128,
         currency: Symbol,
     ) -> Result<(), PayoutError> {
-        let admin: Address = env
+        caller.require_auth();
+
+        let factory: Address = env
             .storage()
             .instance()
-            .get(&ADMIN_KEY)
-            .expect("not initialized");
+            .get(&FACTORY_KEY)
+            .expect("factory not initialized");
 
-        admin.require_auth();
+        let arena_id = pool_id as u64;
+        let arena_ref: ArenaRef = env.invoke_contract(
+            &factory,
+            &soroban_sdk::Symbol::new(&env, "get_arena_ref"),
+            soroban_sdk::vec![&env, arena_id.into_val(&env)],
+        );
+
+        if caller != arena_ref.contract {
+            return Err(PayoutError::UnauthorizedCaller);
+        }
 
         require_not_paused(&env)?;
 
