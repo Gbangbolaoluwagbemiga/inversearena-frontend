@@ -1,8 +1,8 @@
 #![no_std]
 
 use soroban_sdk::{
-    Address, BytesN, Env, Symbol, contract, contracterror, contractimpl, contracttype, symbol_short,
-    token,
+    Address, BytesN, Env, Symbol, contract, contracterror, contractimpl, contracttype,
+    symbol_short, token,
 };
 
 // ── Storage keys ──────────────────────────────────────────────────────────────
@@ -10,6 +10,7 @@ use soroban_sdk::{
 const ADMIN_KEY: Symbol = symbol_short!("ADMIN");
 const PAUSED_KEY: Symbol = symbol_short!("PAUSED");
 const TOKEN_KEY: Symbol = symbol_short!("TOKEN");
+const FACTORY_KEY: Symbol = symbol_short!("FACTRY");
 pub const TOTAL_STAKED_KEY: Symbol = symbol_short!("TSTAKE");
 const TOTAL_SHARES_KEY: Symbol = symbol_short!("TSHARES");
 const PENDING_HASH_KEY: Symbol = symbol_short!("P_HASH");
@@ -45,6 +46,7 @@ pub enum StakingError {
     TimelockNotExpired = 8,
     UpgradeAlreadyPending = 9,
     HashMismatch = 10,
+    LockedStake = 11,
 }
 
 // ── Storage key schema ────────────────────────────────────────────────────────
@@ -53,6 +55,8 @@ pub enum StakingError {
 #[derive(Clone)]
 enum DataKey {
     Position(Address),
+    HostLock(Address, u64),
+    HostLockedTotal(Address),
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -116,6 +120,17 @@ impl StakingContract {
             .instance()
             .get(&TOKEN_KEY)
             .expect("not initialized")
+    }
+
+    /// Admin-only: configure factory contract that can lock/release host stake.
+    pub fn set_factory(env: Env, factory: Address) {
+        let admin = Self::admin(env.clone());
+        admin.require_auth();
+        env.storage().instance().set(&FACTORY_KEY, &factory);
+    }
+
+    pub fn factory(env: Env) -> Option<Address> {
+        env.storage().instance().get(&FACTORY_KEY)
     }
 
     // ── Pause mechanism ──────────────────────────────────────────────────────
@@ -201,6 +216,66 @@ impl StakingContract {
             total_claimed_rewards: 0,
             stake_share_bps,
         }
+    }
+
+    /// Returns currently available host stake (staked minus locked amount).
+    pub fn get_host_stake(env: Env, host: Address) -> i128 {
+        let total = Self::staked_balance(env.clone(), host.clone());
+        let locked: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::HostLockedTotal(host))
+            .unwrap_or(0);
+        total.saturating_sub(locked)
+    }
+
+    /// Lock host stake for an arena so host cannot withdraw below reserved amount.
+    pub fn lock_host_stake(
+        env: Env,
+        host: Address,
+        arena_id: u64,
+        amount: i128,
+    ) -> Result<(), StakingError> {
+        if amount <= 0 {
+            return Err(StakingError::InvalidAmount);
+        }
+        let available = Self::get_host_stake(env.clone(), host.clone());
+        if available < amount {
+            return Err(StakingError::InsufficientShares);
+        }
+        let lock_key = DataKey::HostLock(host.clone(), arena_id);
+        if env.storage().persistent().has(&lock_key) {
+            return Ok(());
+        }
+        env.storage().persistent().set(&lock_key, &amount);
+        let current_locked: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::HostLockedTotal(host.clone()))
+            .unwrap_or(0);
+        env.storage()
+            .persistent()
+            .set(&DataKey::HostLockedTotal(host), &(current_locked + amount));
+        Ok(())
+    }
+
+    /// Release previously locked host stake for an arena.
+    pub fn release_host_stake(env: Env, host: Address, arena_id: u64) -> Result<(), StakingError> {
+        let lock_key = DataKey::HostLock(host.clone(), arena_id);
+        let Some(locked_amount) = env.storage().persistent().get::<_, i128>(&lock_key) else {
+            return Ok(());
+        };
+        env.storage().persistent().remove(&lock_key);
+        let current_locked: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::HostLockedTotal(host.clone()))
+            .unwrap_or(0);
+        let next_locked = current_locked.saturating_sub(locked_amount);
+        env.storage()
+            .persistent()
+            .set(&DataKey::HostLockedTotal(host), &next_locked);
+        Ok(())
     }
 
     // ── Staking ───────────────────────────────────────────────────────────────
@@ -318,6 +393,15 @@ impl StakingContract {
             .and_then(|v| v.checked_div(total_shares))
             .unwrap_or(shares);
 
+        let currently_locked: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::HostLockedTotal(staker.clone()))
+            .unwrap_or(0);
+        if position.amount.saturating_sub(tokens_returned) < currently_locked {
+            return Err(StakingError::LockedStake);
+        }
+
         let token_contract = get_token_contract(&env)?;
 
         // CEI: update state before token transfer.
@@ -355,8 +439,12 @@ impl StakingContract {
             return Err(StakingError::UpgradeAlreadyPending);
         }
         let execute_after: u64 = env.ledger().timestamp() + TIMELOCK_PERIOD;
-        env.storage().instance().set(&PENDING_HASH_KEY, &new_wasm_hash);
-        env.storage().instance().set(&EXECUTE_AFTER_KEY, &execute_after);
+        env.storage()
+            .instance()
+            .set(&PENDING_HASH_KEY, &new_wasm_hash);
+        env.storage()
+            .instance()
+            .set(&EXECUTE_AFTER_KEY, &execute_after);
         env.events().publish(
             (TOPIC_UPGRADE_PROPOSED,),
             (EVENT_VERSION, new_wasm_hash, execute_after),
@@ -401,7 +489,8 @@ impl StakingContract {
         }
         env.storage().instance().remove(&PENDING_HASH_KEY);
         env.storage().instance().remove(&EXECUTE_AFTER_KEY);
-        env.events().publish((TOPIC_UPGRADE_CANCELLED,), (EVENT_VERSION,));
+        env.events()
+            .publish((TOPIC_UPGRADE_CANCELLED,), (EVENT_VERSION,));
         Ok(())
     }
 

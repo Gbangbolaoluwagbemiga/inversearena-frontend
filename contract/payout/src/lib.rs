@@ -1,8 +1,8 @@
 #![no_std]
 
 use soroban_sdk::{
-    Address, BytesN, Env, IntoVal, Symbol, Vec, contract, contracterror, contractimpl, contracttype,
-    panic_with_error, symbol_short, token,
+    Address, BytesN, Env, IntoVal, Symbol, Vec, contract, contracterror, contractimpl,
+    contracttype, panic_with_error, symbol_short, token,
 };
 
 const ADMIN_KEY: Symbol = symbol_short!("ADMIN");
@@ -13,6 +13,7 @@ const PENDING_HASH_KEY: Symbol = symbol_short!("P_HASH");
 const EXECUTE_AFTER_KEY: Symbol = symbol_short!("P_AFTER");
 const TOPIC_PAYOUT_EXECUTED: Symbol = symbol_short!("PAYOUT");
 const TOPIC_DUST_COLLECTED: Symbol = symbol_short!("DUST");
+const TOPIC_RECOVERY: Symbol = symbol_short!("RECOVER");
 const TOPIC_PAUSED: Symbol = symbol_short!("PAUSED");
 const TOPIC_UNPAUSED: Symbol = symbol_short!("UNPAUSED");
 const TOPIC_UPGRADE_PROPOSED: Symbol = symbol_short!("UP_PROP");
@@ -111,6 +112,7 @@ pub enum PayoutError {
     TimelockNotExpired = 8,
     UpgradeAlreadyPending = 9,
     HashMismatch = 10,
+    RecoveryAmountInvalid = 11,
 }
 
 #[contract]
@@ -248,7 +250,20 @@ impl PayoutContract {
             .instance()
             .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
 
-        // Transfer tokens to winner if a token address is registered for this currency.
+        let mut fee_amount: i128 = 0;
+        let mut winner_amount: i128 = amount;
+
+        let fee_bps: u32 = env.invoke_contract(
+            &factory,
+            &soroban_sdk::Symbol::new(&env, "current_fee_bps"),
+            soroban_sdk::vec![&env],
+        );
+        if fee_bps > 0 {
+            fee_amount = amount.saturating_mul(fee_bps as i128) / 10_000i128;
+            winner_amount = amount.saturating_sub(fee_amount);
+        }
+
+        // Transfer tokens to winner and fee treasury if token address exists.
         if let Some(token_address) = env
             .storage()
             .instance()
@@ -257,14 +272,31 @@ impl PayoutContract {
             token::Client::new(&env, &token_address).transfer(
                 &env.current_contract_address(),
                 &winner,
-                &amount,
+                &winner_amount,
             );
+            if fee_amount > 0 {
+                let treasury = Self::treasury(env.clone())?;
+                token::Client::new(&env, &token_address).transfer(
+                    &env.current_contract_address(),
+                    &treasury,
+                    &fee_amount,
+                );
+            }
         }
 
-        env.events()
-            .publish((TOPIC_PAYOUT_EXECUTED,), (winner, amount, currency));
+        env.events().publish(
+            (TOPIC_PAYOUT_EXECUTED,),
+            (winner, winner_amount, fee_amount, currency),
+        );
 
-        record_receipt(&env, pool_id as u64, payout_data.winner, amount, 0, None);
+        record_receipt(
+            &env,
+            pool_id as u64,
+            payout_data.winner,
+            winner_amount,
+            fee_amount,
+            None,
+        );
 
         Ok(())
     }
@@ -440,9 +472,11 @@ impl PayoutContract {
             };
             let receipt_key = DataKey::SplitPayout(arena_id, winner.clone());
             env.storage().persistent().set(&receipt_key, &receipt);
-            env.storage()
-                .persistent()
-                .extend_ttl(&receipt_key, PAYOUT_TTL_THRESHOLD, PAYOUT_TTL_EXTEND_TO);
+            env.storage().persistent().extend_ttl(
+                &receipt_key,
+                PAYOUT_TTL_THRESHOLD,
+                PAYOUT_TTL_EXTEND_TO,
+            );
 
             env.events()
                 .publish((TOPIC_PAYOUT_EXECUTED,), (winner, amount, currency.clone()));
@@ -503,8 +537,12 @@ impl PayoutContract {
             return Err(PayoutError::UpgradeAlreadyPending);
         }
         let execute_after: u64 = env.ledger().timestamp() + TIMELOCK_PERIOD;
-        env.storage().instance().set(&PENDING_HASH_KEY, &new_wasm_hash);
-        env.storage().instance().set(&EXECUTE_AFTER_KEY, &execute_after);
+        env.storage()
+            .instance()
+            .set(&PENDING_HASH_KEY, &new_wasm_hash);
+        env.storage()
+            .instance()
+            .set(&EXECUTE_AFTER_KEY, &execute_after);
         env.events().publish(
             (TOPIC_UPGRADE_PROPOSED,),
             (EVENT_VERSION, new_wasm_hash, execute_after),
@@ -549,7 +587,8 @@ impl PayoutContract {
         }
         env.storage().instance().remove(&PENDING_HASH_KEY);
         env.storage().instance().remove(&EXECUTE_AFTER_KEY);
-        env.events().publish((TOPIC_UPGRADE_CANCELLED,), (EVENT_VERSION,));
+        env.events()
+            .publish((TOPIC_UPGRADE_CANCELLED,), (EVENT_VERSION,));
         Ok(())
     }
 
@@ -560,6 +599,28 @@ impl PayoutContract {
             (Some(h), Some(a)) => Some((h, a)),
             _ => None,
         }
+    }
+
+    /// Admin-only recovery endpoint for stranded tokens.
+    pub fn emergency_recover_tokens(
+        env: Env,
+        token_address: Address,
+        recipient: Address,
+        amount: i128,
+    ) -> Result<(), PayoutError> {
+        let admin = Self::admin(env.clone());
+        admin.require_auth();
+        if amount <= 0 {
+            return Err(PayoutError::RecoveryAmountInvalid);
+        }
+        token::Client::new(&env, &token_address).transfer(
+            &env.current_contract_address(),
+            &recipient,
+            &amount,
+        );
+        env.events()
+            .publish((TOPIC_RECOVERY,), (recipient, amount, token_address));
+        Ok(())
     }
 }
 
