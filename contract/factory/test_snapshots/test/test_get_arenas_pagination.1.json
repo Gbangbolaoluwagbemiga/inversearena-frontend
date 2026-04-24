@@ -90,7 +90,7 @@
                   "u32": 10
                 },
                 {
-                  "bool": false
+                  "u64": 7200
                 }
               ]
             }
@@ -127,7 +127,7 @@
                   "u32": 10
                 },
                 {
-                  "bool": false
+                  "u64": 7200
                 }
               ]
             }
@@ -164,7 +164,7 @@
                   "u32": 10
                 },
                 {
-                  "bool": false
+                  "u64": 7200
                 }
               ]
             }
@@ -201,7 +201,7 @@
                   "u32": 10
                 },
                 {
-                  "bool": false
+                  "u64": 7200
                 }
               ]
             }
@@ -238,7 +238,7 @@
                   "u32": 10
                 },
                 {
-                  "bool": false
+                  "u64": 7200
                 }
               ]
             }
@@ -317,14 +317,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "is_private"
-                      },
-                      "val": {
-                        "bool": false
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "pool_id"
                       },
                       "val": {
@@ -340,6 +332,14 @@
                           "hi": 0,
                           "lo": 10000000
                         }
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "win_fee_bps"
+                      },
+                      "val": {
+                        "u32": 200
                       }
                     }
                   ]
@@ -406,14 +406,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "is_private"
-                      },
-                      "val": {
-                        "bool": false
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "pool_id"
                       },
                       "val": {
@@ -429,6 +421,14 @@
                           "hi": 0,
                           "lo": 10000000
                         }
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "win_fee_bps"
+                      },
+                      "val": {
+                        "u32": 200
                       }
                     }
                   ]
@@ -495,14 +495,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "is_private"
-                      },
-                      "val": {
-                        "bool": false
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "pool_id"
                       },
                       "val": {
@@ -518,6 +510,14 @@
                           "hi": 0,
                           "lo": 10000000
                         }
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "win_fee_bps"
+                      },
+                      "val": {
+                        "u32": 200
                       }
                     }
                   ]
@@ -584,14 +584,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "is_private"
-                      },
-                      "val": {
-                        "bool": false
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "pool_id"
                       },
                       "val": {
@@ -607,6 +599,14 @@
                           "hi": 0,
                           "lo": 10000000
                         }
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "win_fee_bps"
+                      },
+                      "val": {
+                        "u32": 200
                       }
                     }
                   ]
@@ -673,14 +673,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "is_private"
-                      },
-                      "val": {
-                        "bool": false
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "pool_id"
                       },
                       "val": {
@@ -696,6 +688,14 @@
                           "hi": 0,
                           "lo": 10000000
                         }
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "win_fee_bps"
+                      },
+                      "val": {
+                        "u32": 200
                       }
                     }
                   ]
@@ -744,6 +744,44 @@
                         },
                         "val": {
                           "bytes": "0202020202020202020202020202020202020202020202020202020202020202"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "CR_ACC"
+                        },
+                        "val": {
+                          "i128": {
+                            "hi": 0,
+                            "lo": 0
+                          }
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "CR_FEE"
+                        },
+                        "val": {
+                          "i128": {
+                            "hi": 0,
+                            "lo": 0
+                          }
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "CR_TOK"
+                        },
+                        "val": {
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "FEE_BPS"
+                        },
+                        "val": {
+                          "u32": 200
                         }
                       },
                       {
@@ -1066,6 +1104,45 @@
         {
           "contract_data": {
             "contract": "CBBPKXGAEXK4FU3BQVLBNS3TV2UYLEZJUEQT4WPDGPHUFET7LKEXIFF2",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "AllPlayers"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CBBPKXGAEXK4FU3BQVLBNS3TV2UYLEZJUEQT4WPDGPHUFET7LKEXIFF2",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "AllPlayers"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": []
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CBBPKXGAEXK4FU3BQVLBNS3TV2UYLEZJUEQT4WPDGPHUFET7LKEXIFF2",
             "key": "ledger_key_contract_instance",
             "durability": "persistent"
           }
@@ -1087,6 +1164,14 @@
                     "storage": [
                       {
                         "key": {
+                          "symbol": "ADMIN"
+                        },
+                        "val": {
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                        }
+                      },
+                      {
+                        "key": {
                           "symbol": "CAPACITY"
                         },
                         "val": {
@@ -1095,10 +1180,46 @@
                       },
                       {
                         "key": {
+                          "symbol": "CREATOR"
+                        },
+                        "val": {
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "FACTORY"
+                        },
+                        "val": {
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "STATE"
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "symbol": "Pending"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
                           "symbol": "TOKEN"
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "WY_BPS"
+                        },
+                        "val": {
+                          "u32": 7000
                         }
                       },
                       {
@@ -1113,10 +1234,10 @@
                           "map": [
                             {
                               "key": {
-                                "symbol": "is_private"
+                                "symbol": "join_deadline"
                               },
                               "val": {
-                                "bool": false
+                                "u64": 7200
                               }
                             },
                             {
@@ -1140,45 +1261,29 @@
                             },
                             {
                               "key": {
-                                "symbol": "round_duration_seconds"
-                              },
-                              "val": {
-                                "u64": 0
-                              }
-                            },
-                            {
-                              "key": {
                                 "symbol": "round_speed_in_ledgers"
                               },
                               "val": {
                                 "u32": 10
                               }
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
+                            },
                             {
-                              "symbol": "ContractAdmin"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
+                              "key": {
+                                "symbol": "win_fee_bps"
+                              },
+                              "val": {
+                                "u32": 200
+                              }
+                            },
                             {
-                              "symbol": "FactoryAddress"
+                              "key": {
+                                "symbol": "winner_yield_share_bps"
+                              },
+                              "val": {
+                                "u32": 7000
+                              }
                             }
                           ]
-                        },
-                        "val": {
-                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
                         }
                       },
                       {
@@ -1201,14 +1306,6 @@
                             },
                             {
                               "key": {
-                                "symbol": "commit_deadline_ledger"
-                              },
-                              "val": {
-                                "u32": 0
-                              }
-                            },
-                            {
-                              "key": {
                                 "symbol": "finished"
                               },
                               "val": {
@@ -1217,18 +1314,10 @@
                             },
                             {
                               "key": {
-                                "symbol": "reveal_deadline_ledger"
+                                "symbol": "round_deadline_ledger"
                               },
                               "val": {
                                 "u32": 0
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "round_deadline"
-                              },
-                              "val": {
-                                "u64": 0
                               }
                             },
                             {
@@ -1237,14 +1326,6 @@
                               },
                               "val": {
                                 "u32": 0
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "round_start"
-                              },
-                              "val": {
-                                "u64": 0
                               }
                             },
                             {
@@ -1281,7 +1362,46 @@
             },
             "ext": "v0"
           },
-          120960
+          535680
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CBWBGJIKFFZEX3K5GRMRMYM7BFZHT66QZAR37SF2SE6V6PQPTLKHARG5",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "AllPlayers"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CBWBGJIKFFZEX3K5GRMRMYM7BFZHT66QZAR37SF2SE6V6PQPTLKHARG5",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "AllPlayers"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": []
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
         ]
       ],
       [
@@ -1309,6 +1429,14 @@
                     "storage": [
                       {
                         "key": {
+                          "symbol": "ADMIN"
+                        },
+                        "val": {
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                        }
+                      },
+                      {
+                        "key": {
                           "symbol": "CAPACITY"
                         },
                         "val": {
@@ -1317,10 +1445,46 @@
                       },
                       {
                         "key": {
+                          "symbol": "CREATOR"
+                        },
+                        "val": {
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "FACTORY"
+                        },
+                        "val": {
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "STATE"
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "symbol": "Pending"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
                           "symbol": "TOKEN"
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "WY_BPS"
+                        },
+                        "val": {
+                          "u32": 7000
                         }
                       },
                       {
@@ -1335,10 +1499,10 @@
                           "map": [
                             {
                               "key": {
-                                "symbol": "is_private"
+                                "symbol": "join_deadline"
                               },
                               "val": {
-                                "bool": false
+                                "u64": 7200
                               }
                             },
                             {
@@ -1362,45 +1526,29 @@
                             },
                             {
                               "key": {
-                                "symbol": "round_duration_seconds"
-                              },
-                              "val": {
-                                "u64": 0
-                              }
-                            },
-                            {
-                              "key": {
                                 "symbol": "round_speed_in_ledgers"
                               },
                               "val": {
                                 "u32": 10
                               }
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
+                            },
                             {
-                              "symbol": "ContractAdmin"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
+                              "key": {
+                                "symbol": "win_fee_bps"
+                              },
+                              "val": {
+                                "u32": 200
+                              }
+                            },
                             {
-                              "symbol": "FactoryAddress"
+                              "key": {
+                                "symbol": "winner_yield_share_bps"
+                              },
+                              "val": {
+                                "u32": 7000
+                              }
                             }
                           ]
-                        },
-                        "val": {
-                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
                         }
                       },
                       {
@@ -1423,14 +1571,6 @@
                             },
                             {
                               "key": {
-                                "symbol": "commit_deadline_ledger"
-                              },
-                              "val": {
-                                "u32": 0
-                              }
-                            },
-                            {
-                              "key": {
                                 "symbol": "finished"
                               },
                               "val": {
@@ -1439,18 +1579,10 @@
                             },
                             {
                               "key": {
-                                "symbol": "reveal_deadline_ledger"
+                                "symbol": "round_deadline_ledger"
                               },
                               "val": {
                                 "u32": 0
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "round_deadline"
-                              },
-                              "val": {
-                                "u64": 0
                               }
                             },
                             {
@@ -1459,14 +1591,6 @@
                               },
                               "val": {
                                 "u32": 0
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "round_start"
-                              },
-                              "val": {
-                                "u64": 0
                               }
                             },
                             {
@@ -1503,7 +1627,46 @@
             },
             "ext": "v0"
           },
-          120960
+          535680
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CCLYKFC5EX4TUBSS56XDVPFJFMO33W7WP7MTMK25EJVV7JKPCJJSXTBI",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "AllPlayers"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CCLYKFC5EX4TUBSS56XDVPFJFMO33W7WP7MTMK25EJVV7JKPCJJSXTBI",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "AllPlayers"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": []
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
         ]
       ],
       [
@@ -1531,6 +1694,14 @@
                     "storage": [
                       {
                         "key": {
+                          "symbol": "ADMIN"
+                        },
+                        "val": {
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                        }
+                      },
+                      {
+                        "key": {
                           "symbol": "CAPACITY"
                         },
                         "val": {
@@ -1539,10 +1710,46 @@
                       },
                       {
                         "key": {
+                          "symbol": "CREATOR"
+                        },
+                        "val": {
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "FACTORY"
+                        },
+                        "val": {
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "STATE"
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "symbol": "Pending"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
                           "symbol": "TOKEN"
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "WY_BPS"
+                        },
+                        "val": {
+                          "u32": 7000
                         }
                       },
                       {
@@ -1557,10 +1764,10 @@
                           "map": [
                             {
                               "key": {
-                                "symbol": "is_private"
+                                "symbol": "join_deadline"
                               },
                               "val": {
-                                "bool": false
+                                "u64": 7200
                               }
                             },
                             {
@@ -1584,45 +1791,29 @@
                             },
                             {
                               "key": {
-                                "symbol": "round_duration_seconds"
-                              },
-                              "val": {
-                                "u64": 0
-                              }
-                            },
-                            {
-                              "key": {
                                 "symbol": "round_speed_in_ledgers"
                               },
                               "val": {
                                 "u32": 10
                               }
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
+                            },
                             {
-                              "symbol": "ContractAdmin"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
+                              "key": {
+                                "symbol": "win_fee_bps"
+                              },
+                              "val": {
+                                "u32": 200
+                              }
+                            },
                             {
-                              "symbol": "FactoryAddress"
+                              "key": {
+                                "symbol": "winner_yield_share_bps"
+                              },
+                              "val": {
+                                "u32": 7000
+                              }
                             }
                           ]
-                        },
-                        "val": {
-                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
                         }
                       },
                       {
@@ -1645,14 +1836,6 @@
                             },
                             {
                               "key": {
-                                "symbol": "commit_deadline_ledger"
-                              },
-                              "val": {
-                                "u32": 0
-                              }
-                            },
-                            {
-                              "key": {
                                 "symbol": "finished"
                               },
                               "val": {
@@ -1661,18 +1844,10 @@
                             },
                             {
                               "key": {
-                                "symbol": "reveal_deadline_ledger"
+                                "symbol": "round_deadline_ledger"
                               },
                               "val": {
                                 "u32": 0
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "round_deadline"
-                              },
-                              "val": {
-                                "u64": 0
                               }
                             },
                             {
@@ -1681,14 +1856,6 @@
                               },
                               "val": {
                                 "u32": 0
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "round_start"
-                              },
-                              "val": {
-                                "u64": 0
                               }
                             },
                             {
@@ -1725,7 +1892,46 @@
             },
             "ext": "v0"
           },
-          120960
+          535680
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CDRS74TAHZSJNMABUU4H3KI5XFH27KY7O7W6GGWPILTOUYMB7A4JDGO4",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "AllPlayers"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CDRS74TAHZSJNMABUU4H3KI5XFH27KY7O7W6GGWPILTOUYMB7A4JDGO4",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "AllPlayers"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": []
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
         ]
       ],
       [
@@ -1753,6 +1959,14 @@
                     "storage": [
                       {
                         "key": {
+                          "symbol": "ADMIN"
+                        },
+                        "val": {
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                        }
+                      },
+                      {
+                        "key": {
                           "symbol": "CAPACITY"
                         },
                         "val": {
@@ -1761,10 +1975,46 @@
                       },
                       {
                         "key": {
+                          "symbol": "CREATOR"
+                        },
+                        "val": {
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "FACTORY"
+                        },
+                        "val": {
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "STATE"
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "symbol": "Pending"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
                           "symbol": "TOKEN"
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "WY_BPS"
+                        },
+                        "val": {
+                          "u32": 7000
                         }
                       },
                       {
@@ -1779,10 +2029,10 @@
                           "map": [
                             {
                               "key": {
-                                "symbol": "is_private"
+                                "symbol": "join_deadline"
                               },
                               "val": {
-                                "bool": false
+                                "u64": 7200
                               }
                             },
                             {
@@ -1806,45 +2056,29 @@
                             },
                             {
                               "key": {
-                                "symbol": "round_duration_seconds"
-                              },
-                              "val": {
-                                "u64": 0
-                              }
-                            },
-                            {
-                              "key": {
                                 "symbol": "round_speed_in_ledgers"
                               },
                               "val": {
                                 "u32": 10
                               }
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
+                            },
                             {
-                              "symbol": "ContractAdmin"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
+                              "key": {
+                                "symbol": "win_fee_bps"
+                              },
+                              "val": {
+                                "u32": 200
+                              }
+                            },
                             {
-                              "symbol": "FactoryAddress"
+                              "key": {
+                                "symbol": "winner_yield_share_bps"
+                              },
+                              "val": {
+                                "u32": 7000
+                              }
                             }
                           ]
-                        },
-                        "val": {
-                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
                         }
                       },
                       {
@@ -1867,14 +2101,6 @@
                             },
                             {
                               "key": {
-                                "symbol": "commit_deadline_ledger"
-                              },
-                              "val": {
-                                "u32": 0
-                              }
-                            },
-                            {
-                              "key": {
                                 "symbol": "finished"
                               },
                               "val": {
@@ -1883,18 +2109,10 @@
                             },
                             {
                               "key": {
-                                "symbol": "reveal_deadline_ledger"
+                                "symbol": "round_deadline_ledger"
                               },
                               "val": {
                                 "u32": 0
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "round_deadline"
-                              },
-                              "val": {
-                                "u64": 0
                               }
                             },
                             {
@@ -1903,14 +2121,6 @@
                               },
                               "val": {
                                 "u32": 0
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "round_start"
-                              },
-                              "val": {
-                                "u64": 0
                               }
                             },
                             {
@@ -1947,7 +2157,46 @@
             },
             "ext": "v0"
           },
-          120960
+          535680
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CDTGMSXLPVPOZUWY4W73JFCKSAKESWZSSXQBJ3SWQWDJAU7IRFDK7T6B",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "AllPlayers"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CDTGMSXLPVPOZUWY4W73JFCKSAKESWZSSXQBJ3SWQWDJAU7IRFDK7T6B",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "AllPlayers"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": []
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
         ]
       ],
       [
@@ -1975,6 +2224,14 @@
                     "storage": [
                       {
                         "key": {
+                          "symbol": "ADMIN"
+                        },
+                        "val": {
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                        }
+                      },
+                      {
+                        "key": {
                           "symbol": "CAPACITY"
                         },
                         "val": {
@@ -1983,10 +2240,46 @@
                       },
                       {
                         "key": {
+                          "symbol": "CREATOR"
+                        },
+                        "val": {
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "FACTORY"
+                        },
+                        "val": {
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "STATE"
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "symbol": "Pending"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
                           "symbol": "TOKEN"
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "WY_BPS"
+                        },
+                        "val": {
+                          "u32": 7000
                         }
                       },
                       {
@@ -2001,10 +2294,10 @@
                           "map": [
                             {
                               "key": {
-                                "symbol": "is_private"
+                                "symbol": "join_deadline"
                               },
                               "val": {
-                                "bool": false
+                                "u64": 7200
                               }
                             },
                             {
@@ -2028,45 +2321,29 @@
                             },
                             {
                               "key": {
-                                "symbol": "round_duration_seconds"
-                              },
-                              "val": {
-                                "u64": 0
-                              }
-                            },
-                            {
-                              "key": {
                                 "symbol": "round_speed_in_ledgers"
                               },
                               "val": {
                                 "u32": 10
                               }
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
+                            },
                             {
-                              "symbol": "ContractAdmin"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
+                              "key": {
+                                "symbol": "win_fee_bps"
+                              },
+                              "val": {
+                                "u32": 200
+                              }
+                            },
                             {
-                              "symbol": "FactoryAddress"
+                              "key": {
+                                "symbol": "winner_yield_share_bps"
+                              },
+                              "val": {
+                                "u32": 7000
+                              }
                             }
                           ]
-                        },
-                        "val": {
-                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
                         }
                       },
                       {
@@ -2089,14 +2366,6 @@
                             },
                             {
                               "key": {
-                                "symbol": "commit_deadline_ledger"
-                              },
-                              "val": {
-                                "u32": 0
-                              }
-                            },
-                            {
-                              "key": {
                                 "symbol": "finished"
                               },
                               "val": {
@@ -2105,18 +2374,10 @@
                             },
                             {
                               "key": {
-                                "symbol": "reveal_deadline_ledger"
+                                "symbol": "round_deadline_ledger"
                               },
                               "val": {
                                 "u32": 0
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "round_deadline"
-                              },
-                              "val": {
-                                "u64": 0
                               }
                             },
                             {
@@ -2125,14 +2386,6 @@
                               },
                               "val": {
                                 "u32": 0
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "round_start"
-                              },
-                              "val": {
-                                "u64": 0
                               }
                             },
                             {
@@ -2169,7 +2422,7 @@
             },
             "ext": "v0"
           },
-          120960
+          535680
         ]
       ],
       [
@@ -2190,7 +2443,7 @@
             },
             "ext": "v0"
           },
-          120960
+          535680
         ]
       ]
     ]

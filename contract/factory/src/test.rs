@@ -10,7 +10,8 @@ use soroban_sdk::{
 
 const TIMELOCK: u64 = 48 * 60 * 60; // 48 hours
 const MIN_STAKE: i128 = 10_000_000; // 10 XLM in stroops
-const MAX_CAPACITY: u32 = 256;
+// Default protocol-wide player cap (see issue #495). Mirrors `MAX_PLAYERS_HARD_CAP`.
+const MAX_CAPACITY: u32 = MAX_PLAYERS_HARD_CAP;
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -329,12 +330,136 @@ fn test_create_pool_with_zero_capacity_returns_invalid_capacity() {
 }
 
 #[test]
-fn test_create_pool_exceeding_max_capacity_returns_invalid_capacity() {
+fn test_create_pool_exceeding_max_capacity_returns_exceeds_player_cap() {
     let (env, admin, client) = setup();
     client.set_arena_wasm_hash(&dummy_hash(&env));
     let currency = supported_currency(&env, &client);
     let result = client.try_create_pool(&admin, &MIN_STAKE, &currency, &10u32, &(MAX_CAPACITY + 1), &(env.ledger().timestamp() + 7200));
+    assert_eq!(result, Err(Ok(Error::ExceedsPlayerCap)));
+}
+
+#[test]
+fn test_create_pool_above_structural_capacity_returns_invalid_capacity() {
+    // Even after the admin raises the player cap to its absolute max,
+    // capacity above the structural ceiling (`MAX_POOL_CAPACITY`, currently 256)
+    // must still fail with `InvalidCapacity`.
+    let (env, admin, client) = setup();
+    client.set_arena_wasm_hash(&dummy_hash(&env));
+    let currency = supported_currency(&env, &client);
+    client.set_max_players_cap(&MAX_PLAYERS_ABSOLUTE_CAP);
+    let result = client.try_create_pool(
+        &admin,
+        &MIN_STAKE,
+        &currency,
+        &10u32,
+        &257u32,
+        &(env.ledger().timestamp() + 7200),
+    );
     assert_eq!(result, Err(Ok(Error::InvalidCapacity)));
+}
+
+// ── max_players_cap (issue #495) ──────────────────────────────────────────────
+
+#[test]
+fn test_default_max_players_cap_is_hard_cap() {
+    let (_env, _admin, client) = setup();
+    assert_eq!(client.max_players_cap(), MAX_PLAYERS_HARD_CAP);
+}
+
+#[test]
+fn test_create_pool_at_player_cap_succeeds() {
+    let (env, admin, client) = setup();
+    client.set_arena_wasm_hash(&dummy_hash(&env));
+    let currency = supported_currency(&env, &client);
+    client.create_pool(
+        &admin,
+        &MIN_STAKE,
+        &currency,
+        &10u32,
+        &MAX_PLAYERS_HARD_CAP,
+        &(env.ledger().timestamp() + 7200),
+    );
+}
+
+#[test]
+fn test_create_pool_one_over_player_cap_returns_exceeds_player_cap() {
+    let (env, admin, client) = setup();
+    client.set_arena_wasm_hash(&dummy_hash(&env));
+    let currency = supported_currency(&env, &client);
+    let result = client.try_create_pool(
+        &admin,
+        &MIN_STAKE,
+        &currency,
+        &10u32,
+        &(MAX_PLAYERS_HARD_CAP + 1),
+        &(env.ledger().timestamp() + 7200),
+    );
+    assert_eq!(result, Err(Ok(Error::ExceedsPlayerCap)));
+}
+
+#[test]
+fn test_admin_can_raise_player_cap_then_create_pool_succeeds() {
+    let (env, admin, client) = setup();
+    client.set_arena_wasm_hash(&dummy_hash(&env));
+    let currency = supported_currency(&env, &client);
+
+    // Capacity above the default cap is rejected.
+    let new_capacity = MAX_PLAYERS_HARD_CAP + 1;
+    let pre = client.try_create_pool(
+        &admin,
+        &MIN_STAKE,
+        &currency,
+        &10u32,
+        &new_capacity,
+        &(env.ledger().timestamp() + 7200),
+    );
+    assert_eq!(pre, Err(Ok(Error::ExceedsPlayerCap)));
+
+    // Admin raises the cap; the same call now succeeds.
+    client.set_max_players_cap(&MAX_PLAYERS_ABSOLUTE_CAP);
+    assert_eq!(client.max_players_cap(), MAX_PLAYERS_ABSOLUTE_CAP);
+    client.create_pool(
+        &admin,
+        &MIN_STAKE,
+        &currency,
+        &10u32,
+        &new_capacity,
+        &(env.ledger().timestamp() + 7200),
+    );
+}
+
+#[test]
+fn test_set_max_players_cap_above_absolute_cap_is_rejected() {
+    let (_env, _admin, client) = setup();
+    let result = client.try_set_max_players_cap(&(MAX_PLAYERS_ABSOLUTE_CAP + 1));
+    assert_eq!(result, Err(Ok(Error::InvalidPlayerCap)));
+}
+
+#[test]
+fn test_set_max_players_cap_below_minimum_is_rejected() {
+    let (_env, _admin, client) = setup();
+    let result = client.try_set_max_players_cap(&1u32);
+    assert_eq!(result, Err(Ok(Error::InvalidPlayerCap)));
+}
+
+#[test]
+fn test_set_max_players_cap_can_lower_below_default() {
+    let (env, admin, client) = setup();
+    client.set_arena_wasm_hash(&dummy_hash(&env));
+    let currency = supported_currency(&env, &client);
+
+    client.set_max_players_cap(&8u32);
+    assert_eq!(client.max_players_cap(), 8u32);
+
+    let result = client.try_create_pool(
+        &admin,
+        &MIN_STAKE,
+        &currency,
+        &10u32,
+        &9u32,
+        &(env.ledger().timestamp() + 7200),
+    );
+    assert_eq!(result, Err(Ok(Error::ExceedsPlayerCap)));
 }
 
 // ── create_pool duplicate rejection ───────────────────────────────────────────
@@ -597,8 +722,6 @@ fn test_pending_upgrade_none_after_cancel() {
 
 #[test]
 fn timelock_propose_stores_hash_and_executable_after_and_emits_event() {
-    use soroban_sdk::testutils::Ledger as _;
-
     let (env, _admin, client) = setup();
     let hash = BytesN::from_array(&env, &[0u8; 32]);
 
@@ -1517,4 +1640,130 @@ fn fee_snapshot_stored_in_arena_metadata() {
     let metadata2 = client.get_arena(&1u32).expect("second arena must exist");
     assert_eq!(metadata2.win_fee_bps, 500u32, "new arena must snapshot the current 500 bps fee");
     let _ = (arena_addr, arena_addr2);
+}
+
+// ── Arena creation fee (flat XLM/token fee) ──────────────────────────────────
+
+#[test]
+fn creation_fee_admin_update_emits_event_and_updates_config() {
+    use soroban_sdk::testutils::Events as _;
+
+    let (env, _admin, client) = setup();
+
+    // Use a plain contract address as the fee token here; SAC registration emits
+    // extra host events that make `env.events().all()` harder to assert against.
+    let fee_token = Address::generate(&env);
+
+    let before = env.events().all().len();
+    client.set_creation_fee(&5_000_000i128, &fee_token);
+    // Read contract events before any further contract calls: follow-up invokes
+    // (e.g. `get_creation_fee`) can clear the host event buffer in SDK 22 tests.
+    let events = env.events().all();
+    let (fee, tok) = client.get_creation_fee();
+    assert_eq!(fee, 5_000_000i128);
+    assert_eq!(tok, fee_token);
+
+    assert_eq!(
+        events.len(),
+        before + 1,
+        "set_creation_fee must emit exactly one contract event"
+    );
+
+    let mut found = false;
+    for (_contract, topics, data) in events.iter() {
+        if topics.is_empty() {
+            continue;
+        }
+        let topic0: Symbol = topics.get(0).unwrap().into_val(&env);
+        if topic0 != symbol_short!("CRF_UP") {
+            continue;
+        }
+        let payload: (u32, i128, i128, Address) = data.into_val(&env);
+        assert_eq!((payload.0, payload.1, payload.2), (1, 0, 5_000_000));
+        assert_eq!(payload.3, fee_token);
+        found = true;
+    }
+    assert!(found, "expected FeeConfigUpdated (CRF_UP) event from factory");
+}
+
+#[test]
+fn creation_fee_non_admin_set_panics() {
+    // Use real auth behavior (no env.mock_all_auths()) so require_auth panics.
+    let env = Env::default();
+    let contract_id = env.register(FactoryContract, ());
+    let client = FactoryContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &admin,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "initialize",
+            args: soroban_sdk::vec![&env, admin.clone().into_val(&env)].into(),
+            sub_invokes: &[],
+        },
+    }]);
+    client.initialize(&admin);
+
+    // Now attempt set_creation_fee with no auths -> should abort.
+    env.mock_auths(&[]);
+    let token_admin = Address::generate(&env);
+    let fee_token = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
+    assert_auth_err(client.try_set_creation_fee(&1_000_000i128, &fee_token));
+}
+
+#[test]
+fn create_pool_fails_if_host_balance_below_creation_fee_and_transfers_when_sufficient() {
+    let (env, admin, client) = setup();
+    client.set_arena_wasm_hash(&dummy_hash(&env));
+
+    // Use a Stellar Asset (SAC) as the fee token.
+    let token_admin = Address::generate(&env);
+    let fee_token_addr = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
+    let fee_token = StellarAssetClient::new(&env, &fee_token_addr);
+    let fee_token_client = soroban_sdk::token::Client::new(&env, &fee_token_addr);
+
+    // Configure a flat 10 XLM (stroops) creation fee.
+    let creation_fee: i128 = 10_000_000;
+    client.set_creation_fee(&creation_fee, &fee_token_addr);
+
+    // Pool stake token can be any supported token (doesn't need to be the fee token).
+    let currency = supported_currency(&env, &client);
+
+    // Host has insufficient balance -> create_pool must abort inside token transfer.
+    fee_token.mint(&admin, &(creation_fee - 1));
+    let stake = MIN_STAKE + 1_000_000;
+    let insufficient = client.try_create_pool(
+        &admin,
+        &stake,
+        &currency,
+        &10u32,
+        &8u32,
+        &(env.ledger().timestamp() + 7200),
+    );
+    assert_eq!(
+        insufficient,
+        Err(Ok(Error::InsufficientCreationFee)),
+        "expected insufficient creation fee balance"
+    );
+
+    // Mint enough additional balance and try again -> should succeed and transfer fee.
+    let factory_addr = client.address.clone();
+    let before_factory_bal = fee_token_client.balance(&factory_addr);
+    fee_token.mint(&admin, &1i128);
+    let ok = client.create_pool(
+        &admin,
+        &stake,
+        &currency,
+        &10u32,
+        &8u32,
+        &(env.ledger().timestamp() + 7200),
+    );
+    let after_factory_bal = fee_token_client.balance(&factory_addr);
+    assert_eq!(after_factory_bal, before_factory_bal + creation_fee);
+    let _ = ok;
 }

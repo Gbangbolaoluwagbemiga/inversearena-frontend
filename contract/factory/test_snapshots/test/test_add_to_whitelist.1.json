@@ -222,6 +222,44 @@
                       },
                       {
                         "key": {
+                          "symbol": "CR_ACC"
+                        },
+                        "val": {
+                          "i128": {
+                            "hi": 0,
+                            "lo": 0
+                          }
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "CR_FEE"
+                        },
+                        "val": {
+                          "i128": {
+                            "hi": 0,
+                            "lo": 0
+                          }
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "CR_TOK"
+                        },
+                        "val": {
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "FEE_BPS"
+                        },
+                        "val": {
+                          "u32": 200
+                        }
+                      },
+                      {
+                        "key": {
                           "symbol": "MIN_STK"
                         },
                         "val": {

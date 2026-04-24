@@ -531,6 +531,10 @@ impl ArenaContract {
             &env.current_contract_address(),
             &amount,
         );
+        let pool: i128 = env.storage().instance().get(&PRIZE_POOL_KEY).unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&PRIZE_POOL_KEY, &(pool + amount));
         env.storage().persistent().set(&key, &true);
         bump(&env, &key);
         env.storage()
@@ -1121,41 +1125,6 @@ impl ArenaContract {
             .unwrap_or(false)
     }
 
-    pub fn leave(env: Env, player: Address) -> Result<(), ArenaError> {
-        player.require_auth();
-        if !env
-            .storage()
-            .persistent()
-            .has(&DataKey::Survivor(player.clone()))
-        {
-            return Err(ArenaError::NotASurvivor);
-        }
-        env.storage()
-            .persistent()
-            .remove(&DataKey::Survivor(player));
-        let count: u32 = env
-            .storage()
-            .instance()
-            .get(&SURVIVOR_COUNT_KEY)
-            .unwrap_or(0);
-        env.storage()
-            .instance()
-            .set(&SURVIVOR_COUNT_KEY, &count.saturating_sub(1));
-        Ok(())
-    }
-
-    pub fn set_max_rounds(env: Env, max_rounds: u32) -> Result<(), ArenaError> {
-        let admin = Self::admin(env.clone());
-        admin.require_auth();
-        if max_rounds < bounds::MIN_MAX_ROUNDS || max_rounds > bounds::MAX_MAX_ROUNDS {
-            return Err(ArenaError::InvalidMaxRounds);
-        }
-        let mut config = get_config(&env)?;
-        config.max_rounds = max_rounds;
-        env.storage().instance().set(&DataKey::Config, &config);
-        Ok(())
-    }
-
     pub fn get_config(env: Env) -> Result<ArenaConfig, ArenaError> {
         get_config(&env)
     }
@@ -1171,41 +1140,18 @@ impl ArenaContract {
     }
 
     pub fn get_arena_state(env: Env) -> Result<ArenaStateView, ArenaError> {
-        let round = get_round(&env)?;
-        Ok(ArenaStateView {
-            survivors_count: env
-                .storage()
-                .instance()
-                .get(&SURVIVOR_COUNT_KEY)
-                .unwrap_or(0),
-            max_capacity: capacity(&env),
-            round_number: round.round_number,
-            current_stake: env.storage().instance().get(&PRIZE_POOL_KEY).unwrap_or(0),
-            potential_payout: env.storage().instance().get(&PRIZE_POOL_KEY).unwrap_or(0),
-        })
+        let cache = ArenaCache::load(&env)?;
+        Ok(cache.arena_state_view())
     }
 
     pub fn get_user_state(env: Env, player: Address) -> UserStateView {
-        let is_active = env
-            .storage()
-            .persistent()
-            .has(&DataKey::Survivor(player.clone()));
-        let has_won = env.storage().persistent().has(&DataKey::Winner(player));
-        UserStateView { is_active, has_won }
+        PlayerCache::load(&env, &player).user_state_view()
     }
 
     pub fn get_full_state(env: Env, player: Address) -> Result<FullStateView, ArenaError> {
-        let arena = Self::get_arena_state(env.clone())?;
-        let user = Self::get_user_state(env, player);
-        Ok(FullStateView {
-            survivors_count: arena.survivors_count,
-            max_capacity: arena.max_capacity,
-            round_number: arena.round_number,
-            current_stake: arena.current_stake,
-            potential_payout: arena.potential_payout,
-            is_active: user.is_active,
-            has_won: user.has_won,
-        })
+        let cache = ArenaCache::load(&env)?;
+        let player_cache = PlayerCache::load(&env, &player);
+        Ok(cache.full_state_view(&player_cache))
     }
 
     pub fn set_metadata(
@@ -1234,7 +1180,7 @@ impl ArenaContract {
             description,
             host,
             created_at: env.ledger().timestamp(),
-            is_private: get_config(&env).map(|c| c.is_private).unwrap_or(false),
+            is_private: false,
         };
         env.storage()
             .persistent()
@@ -1338,6 +1284,84 @@ impl ArenaContract {
     }
 }
 
+/// Per-call snapshot of the arena's instance-storage fields.
+///
+/// Read-only entrypoints (`get_arena_state`, `get_full_state`) used to reach
+/// into instance storage independently and re-issue overlapping reads — most
+/// notably `PRIZE_POOL_KEY` was loaded twice inside `get_arena_state` itself.
+/// Loading once into this struct guarantees each ledger key is read at most
+/// once per public invocation, lowering simulation cost (issue #481).
+///
+/// Not a `#[contracttype]` — purely an in-memory cache, never persisted.
+struct ArenaCache {
+    round: RoundState,
+    survivor_count: u32,
+    max_capacity: u32,
+    prize_pool: i128,
+}
+
+impl ArenaCache {
+    fn load(env: &Env) -> Result<Self, ArenaError> {
+        let storage = env.storage().instance();
+        let round: RoundState = storage.get(&DataKey::Round).ok_or(ArenaError::NotInitialized)?;
+        let survivor_count: u32 = storage.get(&SURVIVOR_COUNT_KEY).unwrap_or(0);
+        let max_capacity: u32 = storage.get(&CAPACITY_KEY).unwrap_or(bounds::MAX_ARENA_PARTICIPANTS);
+        let prize_pool: i128 = storage.get(&PRIZE_POOL_KEY).unwrap_or(0);
+        Ok(Self {
+            round,
+            survivor_count,
+            max_capacity,
+            prize_pool,
+        })
+    }
+
+    fn arena_state_view(&self) -> ArenaStateView {
+        ArenaStateView {
+            survivors_count: self.survivor_count,
+            max_capacity: self.max_capacity,
+            round_number: self.round.round_number,
+            current_stake: self.prize_pool,
+            potential_payout: self.prize_pool,
+        }
+    }
+
+    fn full_state_view(&self, player: &PlayerCache) -> FullStateView {
+        FullStateView {
+            survivors_count: self.survivor_count,
+            max_capacity: self.max_capacity,
+            round_number: self.round.round_number,
+            current_stake: self.prize_pool,
+            potential_payout: self.prize_pool,
+            is_active: player.is_active,
+            has_won: player.has_won,
+        }
+    }
+}
+
+/// Per-call snapshot of one player's persistent flags. Mirrors `ArenaCache`
+/// for player-scoped reads so `get_full_state` makes each persistent lookup
+/// at most once.
+struct PlayerCache {
+    is_active: bool,
+    has_won: bool,
+}
+
+impl PlayerCache {
+    fn load(env: &Env, player: &Address) -> Self {
+        let persistent = env.storage().persistent();
+        let is_active = persistent.has(&DataKey::Survivor(player.clone()));
+        let has_won = persistent.has(&DataKey::Winner(player.clone()));
+        Self { is_active, has_won }
+    }
+
+    fn user_state_view(&self) -> UserStateView {
+        UserStateView {
+            is_active: self.is_active,
+            has_won: self.has_won,
+        }
+    }
+}
+
 fn get_config(env: &Env) -> Result<ArenaConfig, ArenaError> {
     env.storage()
         .instance()
@@ -1357,6 +1381,14 @@ fn state(env: &Env) -> ArenaState {
         .instance()
         .get(&STATE_KEY)
         .unwrap_or(ArenaState::Pending)
+}
+
+fn get_state(env: &Env) -> ArenaState {
+    state(env)
+}
+
+fn set_state(env: &Env, new_state: ArenaState) {
+    env.storage().instance().set(&STATE_KEY, &new_state);
 }
 
 fn capacity(env: &Env) -> u32 {
