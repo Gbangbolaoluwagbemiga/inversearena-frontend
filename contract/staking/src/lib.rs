@@ -1,8 +1,8 @@
 #![no_std]
 
 use soroban_sdk::{
-    Address, BytesN, Env, Symbol, contract, contracterror, contractimpl, contracttype, symbol_short,
-    token,
+    contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, token,
+    Address, BytesN, Env, Symbol,
 };
 
 // ── Storage keys ──────────────────────────────────────────────────────────────
@@ -107,7 +107,7 @@ impl StakingContract {
         env.storage()
             .instance()
             .get(&ADMIN_KEY)
-            .expect("not initialized")
+            .unwrap_or_else(|| panic_with_error!(&env, StakingError::NotInitialized))
     }
 
     /// Return the staking token address.
@@ -115,7 +115,7 @@ impl StakingContract {
         env.storage()
             .instance()
             .get(&TOKEN_KEY)
-            .expect("not initialized")
+            .unwrap_or_else(|| panic_with_error!(&env, StakingError::NotInitialized))
     }
 
     // ── Pause mechanism ──────────────────────────────────────────────────────
@@ -355,8 +355,12 @@ impl StakingContract {
             return Err(StakingError::UpgradeAlreadyPending);
         }
         let execute_after: u64 = env.ledger().timestamp() + TIMELOCK_PERIOD;
-        env.storage().instance().set(&PENDING_HASH_KEY, &new_wasm_hash);
-        env.storage().instance().set(&EXECUTE_AFTER_KEY, &execute_after);
+        env.storage()
+            .instance()
+            .set(&PENDING_HASH_KEY, &new_wasm_hash);
+        env.storage()
+            .instance()
+            .set(&EXECUTE_AFTER_KEY, &execute_after);
         env.events().publish(
             (TOPIC_UPGRADE_PROPOSED,),
             (EVENT_VERSION, new_wasm_hash, execute_after),
@@ -401,7 +405,8 @@ impl StakingContract {
         }
         env.storage().instance().remove(&PENDING_HASH_KEY);
         env.storage().instance().remove(&EXECUTE_AFTER_KEY);
-        env.events().publish((TOPIC_UPGRADE_CANCELLED,), (EVENT_VERSION,));
+        env.events()
+            .publish((TOPIC_UPGRADE_CANCELLED,), (EVENT_VERSION,));
         Ok(())
     }
 

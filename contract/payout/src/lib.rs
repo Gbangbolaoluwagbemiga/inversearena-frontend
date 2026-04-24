@@ -1,8 +1,8 @@
 #![no_std]
 
 use soroban_sdk::{
-    Address, BytesN, Env, IntoVal, Symbol, Vec, contract, contracterror, contractimpl, contracttype,
-    panic_with_error, symbol_short, token,
+    contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, token,
+    Address, BytesN, Env, IntoVal, Symbol, Vec,
 };
 
 const ADMIN_KEY: Symbol = symbol_short!("ADMIN");
@@ -111,6 +111,7 @@ pub enum PayoutError {
     TimelockNotExpired = 8,
     UpgradeAlreadyPending = 9,
     HashMismatch = 10,
+    NotInitialized = 11,
 }
 
 #[contract]
@@ -140,7 +141,7 @@ impl PayoutContract {
         env.storage()
             .instance()
             .get(&ADMIN_KEY)
-            .expect("not initialized")
+            .unwrap_or_else(|| panic_with_error!(&env, PayoutError::NotInitialized))
     }
 
     pub fn set_treasury(env: Env, treasury: Address) {
@@ -203,7 +204,7 @@ impl PayoutContract {
             .storage()
             .instance()
             .get(&FACTORY_KEY)
-            .expect("factory not initialized");
+            .ok_or(PayoutError::NotInitialized)?;
 
         let arena_id = pool_id as u64;
         let arena_ref: ArenaRef = env.invoke_contract(
@@ -440,9 +441,11 @@ impl PayoutContract {
             };
             let receipt_key = DataKey::SplitPayout(arena_id, winner.clone());
             env.storage().persistent().set(&receipt_key, &receipt);
-            env.storage()
-                .persistent()
-                .extend_ttl(&receipt_key, PAYOUT_TTL_THRESHOLD, PAYOUT_TTL_EXTEND_TO);
+            env.storage().persistent().extend_ttl(
+                &receipt_key,
+                PAYOUT_TTL_THRESHOLD,
+                PAYOUT_TTL_EXTEND_TO,
+            );
 
             env.events()
                 .publish((TOPIC_PAYOUT_EXECUTED,), (winner, amount, currency.clone()));
@@ -503,8 +506,12 @@ impl PayoutContract {
             return Err(PayoutError::UpgradeAlreadyPending);
         }
         let execute_after: u64 = env.ledger().timestamp() + TIMELOCK_PERIOD;
-        env.storage().instance().set(&PENDING_HASH_KEY, &new_wasm_hash);
-        env.storage().instance().set(&EXECUTE_AFTER_KEY, &execute_after);
+        env.storage()
+            .instance()
+            .set(&PENDING_HASH_KEY, &new_wasm_hash);
+        env.storage()
+            .instance()
+            .set(&EXECUTE_AFTER_KEY, &execute_after);
         env.events().publish(
             (TOPIC_UPGRADE_PROPOSED,),
             (EVENT_VERSION, new_wasm_hash, execute_after),
@@ -549,7 +556,8 @@ impl PayoutContract {
         }
         env.storage().instance().remove(&PENDING_HASH_KEY);
         env.storage().instance().remove(&EXECUTE_AFTER_KEY);
-        env.events().publish((TOPIC_UPGRADE_CANCELLED,), (EVENT_VERSION,));
+        env.events()
+            .publish((TOPIC_UPGRADE_CANCELLED,), (EVENT_VERSION,));
         Ok(())
     }
 
